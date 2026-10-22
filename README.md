@@ -1,236 +1,171 @@
 # RippleTest
 
-**Don't just find what changed. Discover what it might break.**
+### Find the break before it ships.
 
-RippleTest is a local, single-page developer workbench for **behavioural regression
-discovery**. It takes two versions of a trusted Python function, asks a local
-open-weight model to propose interesting numeric inputs, validates those inputs,
-executes **both versions with the same arguments**, and shows the real
-before/after evidence — including the exact counterexample when behaviour
-changes.
+**AI-assisted behavioural regression discovery · Local, open-weight AI · Evidence-first testing**
 
-The model is **real and central**: [`qwen2.5-coder:7b`](https://ollama.com/library/qwen2.5-coder)
-served by [Ollama](https://ollama.com) at `http://localhost:11434`. There is no
-hosted fallback and no API key. Every result displayed in the app comes from an
-actual Python call; the model never supplies code or expected outputs.
+A single line of code can change behaviour far beyond the case a developer remembered to test. **RippleTest** compares two versions of a Python function, asks a locally running coding model to suggest targeted inputs, and executes those inputs against **both versions** to reveal reproducible behavioural differences.
 
----
+**The model suggests the tests. The Python engine produces the evidence.**
 
-## The 30-second demo
+> Built for the **Best Open-Source AI Project** hackathon track. RippleTest is a functional prototype focused on small numerical Python functions—not a general-purpose repository scanner or a replacement for an existing test suite.
 
-1. Select **Free-shipping boundary**. The panes show `>=` (original) and `>`
-   (modified).
-2. Click **Generate & run tests**.
-3. Qwen2.5-Coder 7B proposes inputs such as `cart_total=500, threshold=500`.
-4. Python calls both functions. The engine reports original `0`, modified `50`,
-   outcome **Changed** — a reproducible counterexample at the equality boundary.
+## The problem
 
-The same flow works for **Percentage discount** (`discount` as a percentage
-versus a flat subtraction): `price=1000, discount=10` returns `900.0` in the
-original and `990` in the modified version.
+Existing tests can miss the particular inputs that expose a regression: an equality boundary, a zero value, or a percentage interpreted incorrectly. Developers need a fast way to ask **“What changed in behaviour?”** and receive the exact input and outputs that demonstrate it.
 
-An offline **curated baseline** is available too. It is pre-written in the
-application and every row is labelled `Curated baseline` / `not AI-generated`,
-so it can never be mistaken for model output.
+## What RippleTest does
 
----
+1. **Compare code:** Inspect or edit the original and modified versions of a supported Python function.
+2. **Generate tests with open-weight AI:** Qwen2.5-Coder 7B proposes relevant numerical inputs through local Ollama.
+3. **Validate inputs:** Reject malformed, incompatible, duplicate, non-finite, and out-of-range proposals.
+4. **Execute both versions:** Run identical accepted inputs through the appropriate Python execution engine.
+5. **Inspect evidence:** See matching results, behavioural differences, exceptions, model provenance, individual test rationale, and an exportable report.
 
-## Requirements
+Two bundled examples are available via **Load example**, and a clearly labelled **Run curated baseline** option works without AI when an unchanged built-in example is selected. Curated inputs are **never presented as AI-generated**.
 
-- macOS (developed on an Apple Silicon M4, 16 GB unified memory)
-- Python **3.11+**
-- [Ollama](https://ollama.com/download) running locally
-- The model:
+## See it in action
 
-```bash
-ollama pull qwen2.5-coder:7b
-ollama list          # qwen2.5-coder:7b should appear
+### Example 1 — A discount that silently changes meaning
+
+**Original** — `discount` represents a percentage:
+
+```python
+def calculate_discount(price, discount):
+    return price - (price * discount / 100)
 ```
 
-No cloud account, API key, database, or network access beyond the local Ollama
-port is used.
+**Modified** — the same argument is subtracted as a fixed amount:
 
-## Setup and launch (macOS)
-
-```bash
-cd /path/to/RippleTest
-
-# 1. Create the local virtual environment
-python3.11 -m venv .venv
-
-# 2. Install dependencies
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/pip install -r requirements.txt
-
-# 3. Make sure Ollama is running and the model is present
-ollama serve            # if it is not already running as a menu-bar app
-ollama list
-
-# 4. Launch the app
-.venv/bin/streamlit run app.py
+```python
+def calculate_discount(price, discount):
+    return price - discount
 ```
 
-Streamlit opens `http://localhost:8501`. The header first shows the honest
-`CHECKING` state, then the result of a real `GET /api/tags`
-(`LOCAL / QWEN2.5-CODER 7B · READY`, a missing-model message, or `OLLAMA /
-OFFLINE`); it is never hardcoded.
+For `price=1000, discount=10`:
 
-Verified locally with Python 3.11.15, Streamlit 1.58.0, and Ollama 0.40.8 serving
-`qwen2.5-coder:7b` (Q4_K_M).
+| Input | Original | Modified | Observation |
+|---|---:|---:|---|
+| `1000, 10` | `900` | `990` | Behaviour changed |
+| `100, 10` | `90` | `90` | Same result |
 
-### Troubleshooting
+### Example 2 — The free-shipping equality boundary
 
-| Symptom | Fix |
-|---|---|
-| `Ollama unavailable` | Start Ollama (`ollama serve` or the Mac app), then press **Check connection**. |
-| `model missing` | `ollama pull qwen2.5-coder:7b` |
-| First generation is slow | The 7B model may need to load into memory; later requests are faster. The app waits up to 120 s and reports a real timeout instead of inventing results. |
-| Model returns unusable JSON | The app says so, shows the raw reply, rejects the proposals, and executes nothing. Press **Generate & run tests** to retry. |
+Changing `cart_total >= threshold` to `cart_total > threshold` makes a difference **exactly at the threshold**. For `cart_total=500, threshold=500`, the original charges `0`, while the modified version charges `50`.
 
----
+These are **reproducible illustration inputs**, not a promise that the model will generate the same inputs on every run. The UI displays the inputs and results actually used in each run.
 
 ## How it works
 
+```text
+Original function ─┐
+                   ├──► Python AST analysis / execution-target selection
+Modified function ─┘                         │
+                                            ▼
+                        Local Ollama → Qwen2.5-Coder 7B
+                                            │
+                               Proposed JSON test inputs
+                                            │
+                              Strict input validation
+                                            │
+                               Differential execution
+                               ┌──────────┴──────────┐
+                               ▼                     ▼
+                        Original version       Modified version
+                               └──────────┬──────────┘
+                                          ▼
+                         Actual outcomes + exceptions
+                                          ▼
+                          Evidence table + JSON export
 ```
-Scenario selected (trusted, read-only source)
-        │
-        ▼
-GET  localhost:11434/api/tags ────────────► header status (real)
-        │
-POST localhost:11434/api/chat  (JSON schema, stream:false, temperature 0.1)
-        │   model returns {test_cases:[{arguments:{...}, reason:"..."}]}
-        ▼
-Strict validation  ── reject booleans, strings, NaN/inf, missing/extra keys,
-        │             out-of-range values, duplicates, malformed items
-        ▼
-Real execution: original(**args) and modified(**args), exceptions captured
-        │
-        ▼
-Deterministic comparison → Same result / Changed / Error
-        │
-        ▼
-Evidence matrix, case inspector, AI rationale, JSON export
+
+**Why use AI?** Writing a few fixed test cases is easy; choosing *useful* inputs for an unfamiliar code change is harder. The open-weight coding model proposes candidate edge cases, while deterministic code handles validation, execution, and comparison. RippleTest does **not** ask the model to invent expected outputs or declare a change correct.
+
+### Two execution paths
+
+- **Bundled examples:** Run the reviewed Python functions included in `core/scenarios.py`.
+- **Edited functions:** Parse the actual editor contents using Python's `ast` module and evaluate only a restricted set of numerical expressions through `core/expression.py`. The app does **not** run pasted source with `eval()` or `exec()`.
+
+The edited-code path supports one function with compatible numeric parameters and a single `return` expression; arithmetic, comparisons, and conditional expressions are supported. Imports, function calls, loops, assignments, object access, and arbitrary Python programs are **not supported**. Unsupported input receives a visible error instead of pretending it was analysed.
+
+## Technology stack
+
+| Component | Technology | Responsibility |
+|---|---|---|
+| Interface | **Streamlit** | Editable code workspace, analysis states, evidence and export |
+| Runtime model | **Qwen2.5-Coder 7B** | Proposes test inputs and brief rationales |
+| Local model server | **Ollama** | Serves the open-weight model over `localhost:11434` |
+| Analysis & validation | **Python AST + Pydantic / project validators** | Restricts supported syntax and validates model proposals |
+| Execution | **Python differential engine** | Runs both implementations and compares actual outcomes |
+| Testing | **pytest** | Unit and app-state tests |
+
+**Open-weight requirement:** The core AI capability uses `qwen2.5-coder:7b`, a Qwen2.5-Coder model served locally through Ollama. The 7B model is distributed under **Apache-2.0**; RippleTest does not train or redistribute model weights. The coding assistant used during development is separate from the model used by RippleTest itself.
+
+## Run locally
+
+**Requirements:** macOS or another Ollama-supported system, **Python 3.11+**, sufficient memory for Qwen2.5-Coder 7B, and Ollama installed. The prototype was developed on an **Apple M4 Mac with 16 GB unified memory**.
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/aaasthashete/RippleTest.git
+cd RippleTest
+
+# 2. Create and activate a Python environment
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install Python dependencies
+python -m pip install -r requirements.txt
+
+# 4. Install the local AI model (with Ollama running)
+ollama pull qwen2.5-coder:7b
+
+# 5. Start the app
+streamlit run app.py
 ```
 
-### Trust boundary
+Open the local address printed by Streamlit (usually **http://localhost:8501**).
 
-- The model generates **data only**: numeric arguments plus a short rationale.
-- Only the two bundled, pre-reviewed functions in [`core/scenarios.py`](core/scenarios.py)
-  are ever called. The UI's code panes are read-only; they are derived from
-  `inspect.getsource` of those same callables (a test enforces that the displayed
-  source matches the executed function).
-- There is no `eval`, `exec`, dynamic import of user paths, shell execution, or
-  upload/paste-and-run path in the MVP. A test scans the core package for those
-  facilities.
-- Model-supplied arguments are validated against the selected scenario's exact
-  parameter names, numeric type, finiteness, inclusive bounds, and uniqueness
-  before any call.
+If Ollama is not already running, start the Ollama desktop app or run `ollama serve` in a separate terminal. **No paid model API or API key is required.** Model generation requires the local Ollama service, but the curated baseline for unchanged bundled examples does not.
 
-### Classification
+### Test the project
 
-| Label | Meaning |
-|---|---|
-| **Same result** | Both versions returned equal values (numbers within `rel_tol=1e-9`, `abs_tol=1e-9`). |
-| **Changed** | Both executions completed and returned different values. |
-| **Error** | At least one version raised an exception. Captured as evidence and shown with its type and message; never counted as a pass. |
-
-A changed value is **not** labelled a bug: the tool has no independent oracle for
-intent. `No difference found` likewise does not prove the change is safe.
-Exceptions during execution do not take the app down, and other cases still run.
-
-### What the model actually receives
-
-Both function sources, the intended behaviour, and the accepted argument names
-with ranges. It is explicitly told not to include expected outputs and to include
-boundary/equality cases where relevant. It receives **no** test result feedback,
-so it cannot fabricate an outcome that appears in the matrix.
-
----
-
-## Bundled scenarios
-
-| Scenario | Original | Modified | Contract |
-|---|---|---|---|
-| Percentage discount | `price - (price * discount / 100)` | `price - discount` | `discount` is a percentage from 0 to 100 |
-| Free-shipping boundary | `0 if cart_total >= threshold else 50` | `0 if cart_total > threshold else 50` | Free when the total is **at least** the threshold |
-
-Bounds: `price`/`cart_total`/`threshold` ∈ [0, 10000], `discount` ∈ [0, 100];
-finite numbers, booleans rejected.
-
-The curated baseline cases (and their expected real outputs) are the ones in the
-project's `TEST_AND_DEMO.md`. They are assertions for development, **not**
-evidence of what the model will propose on any given run.
-
----
+```bash
+python -m pytest -q
+```
 
 ## Project structure
 
 ```text
 RippleTest/
-├── app.py                  # single-page Streamlit UI (Paper & Graphite)
+├── app.py                     # Streamlit user interface
 ├── core/
-│   ├── scenarios.py        # trusted functions + read-only scenario metadata
-│   ├── ollama_client.py    # real /api/tags + /api/chat client, typed errors
-│   ├── validators.py       # JSON envelope parsing + strict numeric validation
-│   ├── differential.py     # execution, exception capture, comparison, summary
-│   ├── pipeline.py         # one run: validation → execution → RunRecord
-│   └── report.py           # JSON export of actual records
-├── tests/                  # pytest: scenarios, validation, comparison, Ollama errors
-├── .streamlit/config.toml  # official theme settings
+│   ├── scenarios.py           # Reviewed demo functions and curated inputs
+│   ├── expression.py          # Restricted AST interpreter for edited functions
+│   ├── ollama_client.py       # Local model health checks and generation
+│   ├── validators.py          # Model-response and input validation
+│   ├── differential.py        # Execution and result classification
+│   ├── pipeline.py            # Run orchestration and provenance
+│   └── report.py              # Export of observed results
+├── tests/                     # Automated tests
+├── .streamlit/config.toml     # UI theme configuration
 ├── requirements.txt
-├── pytest.ini
-└── *.md                    # the original hackathon specification pack
+└── README.md
 ```
 
-## Running the tests
+## Reliability, boundaries, and limitations
 
-```bash
-.venv/bin/python -m pytest
-```
+- A **behavioural difference is not automatically a bug**; the developer must determine intended behaviour.
+- **No difference detected** does not prove the code is regression-free. The model may miss useful inputs.
+- AI generates **input data**, not executable Python or fabricated test outcomes. Failed validation is reported rather than silently ignored.
+- The restricted AST interpreter is **not a general sandbox** and does not support arbitrary Python, external repositories, or executing uploaded files.
+- This is a **local function-level MVP**: there is no full GitHub PR analysis, dependency graph, CI/CD integration, or cloud-hosted inference in the application.
+- The interface reports model connectivity and distinguishes AI-generated cases from the curated baseline.
 
-The suite uses faked HTTP for Ollama error paths, so it needs neither a running
-model nor network access. It also drives the actual Streamlit page headlessly
-through `AppTest` to check the offline, missing-model, invalid-reply,
-zero-usable-case, and curated-baseline states. It covers:
+## Future direction
 
-- the scenario registry, source/callable consistency, and documented truth tables;
-- rejection of booleans, strings, NaN/inf, missing/extra arguments, out-of-range
-  values, duplicates, malformed items, and more than eight proposals;
-- same/changed/error classification, numeric tolerance, exception capture,
-  deterministic repeat runs, provenance, summary counts, and report export;
-- real-client behaviour for ready/missing model, offline, timeout, empty reply,
-  HTTP errors, and the one-time plain-JSON fallback if a runtime rejects a schema.
+RippleTest could evolve into a change-focused regression testing service by adding repository dependency analysis, isolated parallel test runners, automated CI/CD workflows, broader language coverage, and stronger regression-oracle support. **These are future possibilities, not features claimed in this hackathon MVP.**
 
-## Design
+---
 
-The interface follows the **Paper & Graphite** design system: warm near-white
-canvas, graphite ink, one blue accent, restrained semantic colours, macOS system
-typography, a two-pane read-only code comparison with diff-marked lines, a slim
-four-metric summary, an outcome matrix, and an evidence inspector. No gradients,
-glassmorphism, invented confidence scores, decorative charts, or filler metrics.
-Narrow layouts stack the panes and wrap controls without hiding evidence.
-
-## Model attribution
-
-- Runtime model: **Qwen2.5-Coder 7B** (`qwen2.5-coder:7b`, 7.6B parameters,
-  Q4_K_M quantisation, served by Ollama 0.40.8 locally).
-- Upstream: Qwen2.5-Coder by the Qwen team, Alibaba Cloud. The 7B model card
-  lists **Apache-2.0**; check the model card for the exact variant you install.
-- RippleTest does not train, fine-tune, or redistribute model weights.
-
-## Limits and non-goals
-
-- Only two bundled scenarios; no repository scanning, GitHub PRs, CI integration,
-  user code execution, database, auth, or hosted model.
-- No coverage metric or correctness oracle. A difference may be intentional.
-- Not a sandbox. Executing arbitrary user code safely would require a separate
-  security design and is explicitly out of scope for this MVP.
-- Model output is probabilistic: a run may miss the interesting boundary. The
-  honest fallback is the clearly-labelled curated baseline, plus a visible retry.
-
-## Hackathon integrity
-
-These Markdown files were pre-event planning material. The implementation above
-was produced during the event with AI assistance, which the event explicitly
-allows. No prebuilt implementation code from the planning pack was used; the pack
-contains specifications only. No Graphify or GitHub integration is claimed.
+**RippleTest** — *Don't just find what changed. Discover what it might break.*
