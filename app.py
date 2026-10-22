@@ -245,9 +245,20 @@ button:focus-visible, [data-baseweb="select"]:focus-within,
   overflow: hidden; text-overflow: ellipsis;
 }
 .rt-editor { padding: 0; }
-[data-testid="stTextArea"] { background: transparent; }
+/* Code editor: override Streamlit/BaseWeb's light input surfaces. */
+[data-testid="stTextArea"] {
+  background: var(--surface-deep) !important;
+}
+[data-testid="stTextArea"] [data-baseweb="textarea"],
+[data-testid="stTextArea"] [data-baseweb="base-input"],
+[data-testid="stTextArea"] [data-baseweb="textarea"] > div {
+  background-color: var(--surface-deep) !important;
+  color: var(--ink) !important;
+}
 [data-testid="stTextArea"] textarea {
-  background: transparent !important; color: var(--ink) !important;
+  background-color: var(--surface-deep) !important;
+  color: var(--ink) !important;
+  -webkit-text-fill-color: var(--ink) !important;
   font-family: var(--mono) !important; font-size: 12.75px !important;
   line-height: 21px !important; border: none !important;
   padding: 14px 16px 16px !important; caret-color: var(--accent) !important;
@@ -494,6 +505,140 @@ table.rt-table { width: 100%; border-collapse: collapse; min-width: 640px; }
 .rt-footer b { color: var(--ink-muted); font-weight: 600; }
 .rt-footer .rt-foot-right { text-align: right; }
 .rt-footer .rt-mono { font-family: var(--mono); font-size: 10px; }
+
+/* RT_PREMIUM_POLISH_V1 — presentation only */
+/* 01 — A restrained sense of depth, not a decorative dashboard. */
+[data-testid="stAppViewContainer"] {
+  background: radial-gradient(ellipse 76% 380px at 50% -160px,
+    rgba(65,105,255,0.12), transparent 72%), var(--canvas) !important;
+}
+[data-testid="stMainBlockContainer"] { max-width: 1390px; padding-top: 1.4rem; }
+.rt-header {
+  border: 1px solid rgba(123,150,205,.17);
+  background: rgba(21,29,43,.55);
+  border-radius: 14px; padding: 13px 17px;
+  margin-bottom: 36px;
+}
+.rt-mark {
+  color: #fff; background: linear-gradient(130deg,#3154CD,#6582FF);
+  border-radius: 6px; font-size: 13px; padding: 6px 8px;
+  box-shadow: 0 4px 15px rgba(65,105,255,.22);
+}
+.rt-brand-name { font-size: 17px; font-weight: 690; letter-spacing: -.035em; }
+.rt-brand-sub { color: #90A2C4; }
+.rt-eyebrow { margin: 0 0 11px; letter-spacing: .155em; color: #91ACFF; }
+.rt-title {
+  font-size: clamp(32px, 3.4vw, 46px) !important;
+  font-weight: 740 !important;
+  letter-spacing: -.047em !important;
+  line-height: 1.07 !important;
+  margin-bottom: 16px !important;
+}
+.rt-lede { color: #A5B2C6 !important; font-size: 14px !important; line-height: 1.65 !important; }
+.rt-control-note { color: #8493AE; font-size: 11.5px; line-height: 1.55; }
+
+/* 02 — Real unified editor panels: Streamlit elements share one container. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) {
+  background: #101827 !important;
+  border: 1px solid #2B3C5A !important;
+  border-radius: 14px !important;
+  box-shadow: 0 12px 34px rgba(0,0,0,.17) !important;
+  padding: 0 !important;
+  overflow: hidden;
+  min-width: 0;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head--modified) {
+  border-color: rgba(93,129,255,.47) !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) [data-testid="stVerticalBlock"] {
+  gap: 0 !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) [data-testid="stTextArea"] {
+  padding: 0 !important;
+  margin: 0 !important;
+  background: #101827 !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) [data-testid="stTextArea"] textarea {
+  background: #101827 !important;
+  color: #EAF0FA !important;
+  -webkit-text-fill-color: #EAF0FA !important;
+  padding: 19px 19px 16px !important;
+  font-size: 13.5px !important;
+  line-height: 1.8 !important;
+  min-height: 220px;
+  caret-color: #90AAFF !important;
+}
+.rt-pane-head {
+  padding: 13px 17px; min-height: 48px;
+  border-bottom: 1px solid #243550;
+  background: #1A2537;
+}
+.rt-pane-head--modified { background: #1A2640; }
+.rt-pane-head--modified .rt-pane-label b { color: #9CB1FF; }
+.rt-pane-label { font-size: 10px; letter-spacing: .11em; color: #B5C1D7; }
+.rt-pane-fn { color: #8497B6; font-size: 10px; }
+.rt-pane-foot {
+  padding: 12px 17px; border-top: 1px solid #243550;
+  background: #162134; gap: 14px; min-height: 41px;
+}
+.rt-sig, .rt-diffcount { line-height: 1.5; }
+.rt-diffcount .n { color: #9CB1FF; font-weight: 650; }
+
+/* 03 — Clear primary action and balanced secondary controls. */
+[data-testid="stBaseButton-primary"], button[kind="primary"] {
+  background: linear-gradient(115deg, #3159F4, #5178FF) !important;
+  border: 1px solid #6486FF !important;
+  min-height: 48px !important;
+  border-radius: 10px !important;
+  font-weight: 650 !important;
+  box-shadow: 0 6px 22px rgba(47,80,219,.25) !important;
+  transition: filter .15s ease, transform .12s ease, box-shadow .15s ease !important;
+}
+[data-testid="stBaseButton-primary"]:hover, button[kind="primary"]:hover {
+  filter: brightness(1.11);
+  box-shadow: 0 9px 25px rgba(47,80,219,.3) !important;
+}
+[data-testid="stBaseButton-secondary"], button[kind="secondary"] {
+  background: rgba(28,39,58,.55) !important;
+  border-color: #30415D !important; border-radius: 10px !important;
+  color: #C8D3E4 !important;
+}
+[data-baseweb="select"] > div {
+  border-radius: 10px !important;
+  background: #192437 !important;
+  border-color: #354563 !important;
+}
+
+/* 04 — Measured, readable result cards and evidence. */
+.rt-section { margin-top: 38px; }
+.rt-section-title { letter-spacing: -.025em !important; }
+.rt-summary, .rt-table-wrap, .rt-inspector, .rt-empty {
+  border-color: #2D3B53;
+  box-shadow: 0 8px 27px rgba(0,0,0,.11);
+}
+.rt-summary { border-radius: 14px; margin-bottom: 18px; }
+.rt-metric { padding: 17px 20px 18px; }
+.rt-metric-label { color: #9CAAC1; font-size: 10px; }
+.rt-metric-value { font-size: 27px; margin-top: 7px; letter-spacing: -.055em; }
+.rt-highlight {
+  border-radius: 14px; padding: 21px 23px;
+  background: linear-gradient(128deg, rgba(65,105,255,.18), rgba(65,105,255,.045) 65%), #151D2B;
+  box-shadow: 0 10px 28px rgba(0,0,0,.13);
+}
+.rt-side-value { font-size: 29px; font-weight: 600; letter-spacing: -.035em; }
+.rt-table thead th { color: #A4B0C6; font-size: 10px; padding: 13px 16px; }
+.rt-table td { height: 49px; font-size: 12.8px; }
+.rt-table tbody tr:hover td { background: #223049; }
+.rt-inspector { padding: 23px 25px; border-radius: 14px; }
+.rt-empty { padding: 28px 30px; border-style: solid; background: #121B2B; }
+.rt-empty-title { font-size: 15.5px; }
+.rt-footer { margin-top: 44px; }
+@media (max-width: 900px) {
+  .rt-header { padding: 12px; margin-bottom: 24px; }
+  .rt-title { font-size: 31px !important; }
+  .rt-metric { padding: 14px 15px; }
+  .rt-metric-value { font-size: 23px; }
+}
 
 /* Responsive ----------------------------------------------------------- */
 @media (max-width: 900px) {
@@ -1124,49 +1269,52 @@ _changed_line_count = sum(
 
 pane_left, pane_right = st.columns(2, gap="small")
 
+# Use real Streamlit containers so the header, editor and footer render as one
+# visual component.  Editor state keys and all execution logic remain unchanged.
 with pane_left:
-    render(
-        '<section class="rt-pane">'
-        '<div class="rt-pane-head">'
-        '<span class="rt-pane-label"><b>01</b> / Original implementation</span>'
-        f'<span class="rt-pane-fn">{len(_original_lines)} lines · reviewed original</span>'
-        "</div>"
-    )
-    original_source = st.text_area(
-        "Original implementation source",
-        key="editor_original",
-        height=236,
-        label_visibility="collapsed",
-        help="The reviewed original. This exact text is what gets executed.",
-    )
-    render(
-        '<div class="rt-pane-foot" style="border-top:0;border-radius:0 0 12px 12px">'
-        f'<span class="rt-sig">{signature_html}</span>'
-        "</div>"
-    )
+    with st.container(border=True):
+        render(
+            '<div class="rt-pane-head rt-pane-head--original">'
+            '<span class="rt-pane-label"><b>01</b> / Original implementation</span>'
+            f'<span class="rt-pane-fn">{len(_original_lines)} lines · reviewed original</span>'
+            "</div>"
+        )
+        original_source = st.text_area(
+            "Original implementation source",
+            key="editor_original",
+            height=236,
+            label_visibility="collapsed",
+            help="The reviewed original. This exact text is what gets executed.",
+        )
+        render(
+            '<div class="rt-pane-foot">'
+            f'<span class="rt-sig">{signature_html}</span>'
+            "</div>"
+        )
 
 with pane_right:
-    render(
-        '<section class="rt-pane">'
-        '<div class="rt-pane-head">'
-        '<span class="rt-pane-label"><b>02</b> / Modified implementation</span>'
-        f'<span class="rt-pane-fn">{len(_modified_lines)} lines · your edit</span>'
-        "</div>"
-    )
-    modified_source = st.text_area(
-        "Modified implementation source",
-        key="editor_modified",
-        height=236,
-        label_visibility="collapsed",
-        help="The proposed change. This exact text is what gets executed.",
-    )
-    render(
-        '<div class="rt-pane-foot" style="border-top:0;border-radius:0 0 12px 12px">'
-        f'<span class="rt-diffcount"><span class="n">{_changed_line_count}</span> '
-        "line(s) differ</span>"
-        '<span class="rt-sig">edited text is interpreted, never imported</span>'
-        "</div>"
-    )
+    with st.container(border=True):
+        render(
+            '<div class="rt-pane-head rt-pane-head--modified">'
+            '<span class="rt-pane-label"><b>02</b> / Modified implementation</span>'
+            f'<span class="rt-pane-fn">{len(_modified_lines)} lines · your edit</span>'
+            "</div>"
+        )
+        modified_source = st.text_area(
+            "Modified implementation source",
+            key="editor_modified",
+            height=236,
+            label_visibility="collapsed",
+            help="The proposed change. This exact text is what gets executed.",
+        )
+        render(
+            '<div class="rt-pane-foot">'
+            f'<span class="rt-diffcount"><span class="n">{_changed_line_count}</span> '
+            "line(s) differ</span>"
+            '<span class="rt-sig">edited text is interpreted, never imported</span>'
+            "</div>"
+        )
+
 
 # --- Primary action --------------------------------------------------------
 
@@ -1214,10 +1362,13 @@ elif pending == "baseline":
 failure = st.session_state.get("failure")
 run = st.session_state.get("run")
 
-if run is not None and run.scenario_id not in {s.id for s in SCENARIOS.values()}:
-    # A run for code that is no longer on screen; drop it to avoid stale evidence.
-    st.session_state["run"] = None
-    run = None
+if run is not None and run.scenario_id in {s.id for s in SCENARIOS.values()}:
+    # A bundled-scenario run is only valid while the editors still hold that
+    # example. Editable-code runs (scenario_id "custom") always persist, since
+    # they are the evidence for whatever the developer is currently editing.
+    if scenario_matching_sources(original_source, modified_source) is None:
+        st.session_state["run"] = None
+        run = None
 
 if failure:
     render_failure(failure)

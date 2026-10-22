@@ -27,3 +27,8 @@ rippletest-*.json
 
 # Freebuff app metadata (not project source)
 .freebuff/
+
+# Local credentials
+.env
+.env.*
+!.env.example

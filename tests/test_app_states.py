@@ -149,6 +149,60 @@ def test_zero_usable_cases_reports_each_rejection(monkeypatch):
     assert "Observed behaviour" not in text
 
 
+def test_edited_code_renders_results_from_the_interpreter(monkeypatch):
+    """Regression: an editable-code run must render, not be discarded as stale.
+
+    The edited text (price - price*discount) produces a large negative swing that
+    only appears if the interpreter actually ran the developer's code.
+    """
+    generation = GenerationResult(
+        ok=True,
+        raw_content=(
+            '{"test_cases": ['
+            '{"arguments": {"price": 1000, "discount": 10}, "reason": "typical"},'
+            '{"arguments": {"price": 500, "discount": 2}, "reason": "small"}'
+            ']}'
+        ),
+        model=MODEL_NAME,
+        duration_seconds=3.0,
+        used_schema=True,
+    )
+    at = run_app(monkeypatch, READY, generation=generation)
+    at.text_area[1].set_value(
+        "def calculate_discount(price, discount):\n    return price - (price * discount)\n"
+    )
+    at.run()
+    next(b for b in at.button if b.label == "Analyse change").click().run()
+    assert not at.exception
+    text = markdown_text(at)
+    assert "Observed behaviour" in text
+    assert "Restricted AST interpreter" in text
+    assert "Trusted bundled function" not in text
+    # 1000 - (1000 * 10) = -9000 proves the edited expression, not the bundled
+    # example, was executed.
+    assert "-9000" in text
+
+
+def test_unedited_example_uses_the_trusted_engine(monkeypatch):
+    """The reviewed bundled path stays available and is labelled honestly."""
+    generation = GenerationResult(
+        ok=True,
+        raw_content=(
+            '{"test_cases": [{"arguments": {"price": 1000, "discount": 10}, '
+            '"reason": "typical"}]}'
+        ),
+        model=MODEL_NAME,
+        duration_seconds=2.0,
+        used_schema=True,
+    )
+    at = run_app(monkeypatch, READY, generation=generation)
+    next(b for b in at.button if b.label == "Analyse change").click().run()
+    assert not at.exception
+    text = markdown_text(at)
+    assert "Trusted bundled function" in text
+    assert "Restricted AST interpreter" not in text
+
+
 def test_curated_baseline_works_offline_and_is_labelled(monkeypatch):
     at = run_app(monkeypatch, OFFLINE)
     baseline = next(b for b in at.button if b.label == "Run curated baseline")
