@@ -10,11 +10,14 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import requests
 
 from .scenarios import Scenario
+
+if TYPE_CHECKING:
+    from .expression import FunctionPair
 
 DEFAULT_BASE_URL = "http://localhost:11434"
 MODEL_NAME = "qwen2.5-coder:7b"
@@ -108,7 +111,7 @@ def check_model(
     )
 
 
-def build_schema(scenario: Scenario) -> dict[str, Any]:
+def build_schema(scenario: "Scenario | FunctionPair") -> dict[str, Any]:
     """JSON Schema for Ollama's structured-output mode, scoped to this scenario."""
     argument_properties = {
         parameter.name: {
@@ -151,7 +154,7 @@ def build_schema(scenario: Scenario) -> dict[str, Any]:
     }
 
 
-def build_messages(scenario: Scenario) -> list[dict[str, str]]:
+def build_messages(scenario: "Scenario | FunctionPair") -> list[dict[str, str]]:
     """Prompt messages. The model proposes data only; Python does the rest."""
     argument_lines = "\n".join(
         f"- `{parameter.name}`: a number from {parameter.low:g} to {parameter.high:g}. "
@@ -201,7 +204,7 @@ Reply with JSON exactly shaped like:
 
 
 def generate_test_cases(
-    scenario: Scenario,
+    scenario: "Scenario | FunctionPair",
     base_url: str = DEFAULT_BASE_URL,
     model: str = MODEL_NAME,
     timeout: float = GENERATION_TIMEOUT,

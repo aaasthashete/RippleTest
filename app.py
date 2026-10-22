@@ -1,15 +1,18 @@
-"""RippleTest — AI-assisted behavioural regression discovery.
+"""RippleTest 2.0 — AI-assisted code-change investigation.
 
-Single-page Streamlit workspace. The local model proposes test data; this file
-only orchestrates, renders, and displays outcomes produced by real execution of
-the bundled trusted functions.
+A developer pastes two versions of a small numeric Python function. A local
+open-weight model proposes test inputs; the application executes both versions
+with identical, validated arguments and reports exactly what changed.
+
+Safety: the edited text is either recognised as a bundled, reviewed example
+(executed by import) or executed by a restricted AST interpreter. There is no
+exec, no eval, no import, and no function call into pasted code, ever.
 """
 
 from __future__ import annotations
 
 import difflib
 import json
-import re
 from datetime import datetime
 from html import escape
 from typing import Any
@@ -18,9 +21,18 @@ import streamlit as st
 
 from core import ollama_client, pipeline
 from core.differential import CaseResult
+from core.expression import (
+    ENGINE_INTERPRETER,
+    ENGINE_LABELS,
+    ENGINE_NOTES,
+    ENGINE_TRUSTED,
+    EditError,
+    engine_for,
+    resolve_execution_target,
+)
 from core.ollama_client import MODEL_NAME, ModelStatus
 from core.report import run_report
-from core.scenarios import SCENARIOS, Scenario, get_scenario
+from core.scenarios import SCENARIOS, Scenario, get_scenario, scenario_matching_sources
 from core.validators import (
     ModelResponseError,
     RejectedCase,
@@ -29,34 +41,41 @@ from core.validators import (
 )
 
 st.set_page_config(
-    page_title="RippleTest — Behavioural regression discovery",
+    page_title="RippleTest — Code-change investigation",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
 # ---------------------------------------------------------------------------
-# Design system: Paper & Graphite
+# Design system: Midnight Precision
 # ---------------------------------------------------------------------------
 
 CSS = """
 :root {
-  --canvas: #F6F7F5;
-  --surface: #FFFFFF;
-  --surface-muted: #F0F2F1;
-  --ink: #171C22;
-  --ink-muted: #68727B;
-  --line: #DDE2E3;
-  --accent: #2E5BEF;
-  --accent-deep: #2449C6;
-  --accent-soft: #EBF0FF;
-  --positive: #217451;
-  --positive-soft: #E8F4EC;
-  --danger: #B83F48;
-  --danger-soft: #FBEDEF;
-  --warning: #94611A;
-  --warning-soft: #FFF3DF;
-  --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  --canvas: #0B0F17;
+  --surface: #151D2B;
+  --surface-deep: #101724;
+  --surface-raised: #1B2537;
+  --line: #23304A;
+  --line-soft: #1C2740;
+  --ink: #E8ECF4;
+  --ink-muted: #8B98AD;
+  --ink-faint: #64748B;
+  --accent: #4169FF;
+  --accent-hover: #5B7CFF;
+  --accent-soft: rgba(65, 105, 255, 0.16);
+  --accent-line: rgba(65, 105, 255, 0.42);
+  --positive: #4ADE9B;
+  --positive-soft: rgba(74, 222, 155, 0.13);
+  --positive-line: rgba(74, 222, 155, 0.34);
+  --danger: #FF6B6B;
+  --danger-soft: rgba(255, 107, 107, 0.12);
+  --danger-line: rgba(255, 107, 107, 0.36);
+  --warning: #E0A458;
+  --warning-soft: rgba(224, 164, 88, 0.12);
+  --mono: "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 html, body, [data-testid="stAppViewContainer"] {
@@ -66,228 +85,217 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 [data-testid="stAppViewContainer"] { font-size: 15px; }
 [data-testid="stMainBlockContainer"] {
-  max-width: 1380px;
-  padding: 1.5rem 40px 5rem;
+  max-width: 1340px;
+  padding: 1.25rem 40px 5rem;
 }
 [data-testid="stHeader"] { background: transparent; }
 [data-testid="stDecoration"], #MainMenu, footer { display: none !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
-/* Keep the editorial stack on every custom surface; code stays monospace. */
+h1, h2, h3, h4, h5, h6 { color: var(--ink); }
+code, pre, kbd { font-family: var(--mono); }
+
+/* Typography surfaces ------------------------------------------------- */
 .rt-header, .rt-header *, .rt-eyebrow, .rt-title, .rt-lede,
 .rt-contract, .rt-contract *, .rt-pane-head, .rt-pane-label, .rt-pane-fn,
 .rt-section, .rt-section *, .rt-summary, .rt-summary *,
-.rt-matrix-wrap, .rt-matrix-wrap *, .rt-inspector, .rt-inspector *,
+.rt-table-wrap, .rt-table-wrap *, .rt-inspector, .rt-inspector *,
 .rt-notice, .rt-notice *, .rt-empty, .rt-empty *, .rt-footer, .rt-footer *,
 .rt-detail-grid, .rt-detail-grid *, .rt-rejects, .rt-rejects *,
-.rt-control-note, .rt-prov, .rt-chip {
+.rt-control-note, .rt-prov, .rt-chip, .rt-highlight, .rt-highlight *,
+.rt-sig, .rt-sig *, .rt-toolbar, .rt-toolbar * {
   font-family: var(--sans);
 }
-.rt-header .rt-mark, .rt-pane-fn, .rt-pane-label, .rt-line, .rt-ln,
-.rt-prov, .rt-prov-note, .rt-metric-value, .rt-matrix .num, .rt-matrix .mono,
-.rt-exc, .rt-args, .rt-obs-value, .rt-obs-sub, .rt-delta, .rt-detail-value,
-.rt-contract-bounds, .rt-contract-label, .rt-eyebrow, .rt-footer .rt-mono,
-.rt-rejects li b, .rt-rejects code, .rt-notice-extra,
-.rt-summary .rt-metric-value, .rt-status {
+.rt-eyebrow, .rt-pane-label, .rt-metric-label, .rt-field-label,
+.rt-notice-label, .rt-table th, .rt-eyebrow, .rt-prov, .rt-chip,
+.rt-detail-label, .rt-footer .rt-mono, .rt-sig, .rt-pane-fn,
+.rt-metric-value, .rt-table .num, .rt-table .mono, .rt-obs-value,
+.rt-obs-sub, .rt-args, .rt-delta, .rt-detail-value, .rt-rejects code,
+.rt-rejects li b, .rt-status, .rt-mark {
   font-family: var(--mono);
 }
 
-h1, h2, h3, h4, h5, h6 { font-family: var(--sans); color: var(--ink); }
-
-code, pre, kbd { font-family: var(--mono); }
-
-/* Header ---------------------------------------------------------------- */
+/* Header --------------------------------------------------------------- */
 .rt-header {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 20px; padding: 4px 0 16px; margin-bottom: 34px;
-  border-bottom: 1px solid var(--line);
+  gap: 20px; padding: 6px 0 18px; margin-bottom: 30px;
+  border-bottom: 1px solid var(--line-soft);
 }
 .rt-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .rt-mark {
-  font-family: var(--mono); font-size: 13.5px; font-weight: 600; letter-spacing: -.02em;
-  color: var(--surface); background: var(--ink); border-radius: 4px;
+  font-size: 13px; font-weight: 600; letter-spacing: -.02em;
+  color: var(--canvas); background: var(--ink); border-radius: 5px;
   padding: 3px 7px 4px; line-height: 1;
 }
 .rt-brand-name { font-size: 15.5px; font-weight: 640; letter-spacing: -.012em; }
 .rt-brand-sub {
-  font-size: 10px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase;
-  color: var(--ink-muted); border-left: 1px solid var(--line); padding-left: 12px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-faint); border-left: 1px solid var(--line); padding-left: 12px;
 }
 .rt-status {
   display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: .07em;
-  text-transform: uppercase; color: var(--ink-muted); cursor: default;
+  font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-muted); cursor: default;
 }
 .rt-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-.rt-dot--ok { background: var(--positive); }
-.rt-dot--bad { background: var(--danger); }
-.rt-dot--wait { background: var(--warning); }
+.rt-dot--ok { background: var(--positive); box-shadow: 0 0 0 3px var(--positive-soft); }
+.rt-dot--bad { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.rt-dot--wait { background: var(--warning); box-shadow: 0 0 0 3px var(--warning-soft); }
 
-/* Intro ----------------------------------------------------------------- */
+/* Intro ---------------------------------------------------------------- */
 .rt-eyebrow {
-  font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
-  text-transform: uppercase; color: var(--ink-muted); margin-bottom: 10px;
+  font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 12px; font-weight: 600;
 }
-.rt-eyebrow b { color: var(--ink); font-weight: 600; }
-.rt-eyebrow .sep { color: #B4BDC3; padding: 0 4px; }
+.rt-eyebrow .sep { color: var(--ink-faint); padding: 0 6px; }
 .rt-title {
   font-family: var(--sans) !important;
-  font-size: 32px !important; font-weight: 680 !important; letter-spacing: -.028em !important;
-  line-height: 1.12 !important; margin: 0 0 10px !important; color: var(--ink) !important;
-  padding: 0 !important;
+  font-size: 31px !important; font-weight: 680 !important; letter-spacing: -.028em !important;
+  line-height: 1.14 !important; margin: 0 0 10px !important; color: var(--ink) !important;
 }
-h2.rt-section-title { font-family: var(--sans) !important; }
+h2.rt-section-title {
+  font-family: var(--sans) !important; font-size: 17px !important;
+  font-weight: 650 !important; letter-spacing: -.012em !important;
+  margin: 0 !important; color: var(--ink) !important;
+}
 .rt-lede {
-  font-size: 14.5px !important; line-height: 1.55 !important; color: var(--ink-muted) !important;
-  max-width: 62ch; margin: 0 !important;
+  font-size: 14.5px !important; line-height: 1.55 !important;
+  color: var(--ink-muted) !important; max-width: 60ch; margin: 0 !important;
 }
-.rt-lede code, .rt-contract-text code {
-  font-size: 12px; background: var(--surface-muted); color: #33404A;
-  padding: 1px 4px; border-radius: 3px;
+.rt-lede code {
+  font-size: 12px; background: var(--surface); color: var(--accent-hover);
+  padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line-soft);
 }
-.rt-control-note {
-  font-size: 11px; line-height: 1.45; color: var(--ink-muted); margin-top: 2px;
-}
-.rt-control-note b { color: #4C565E; font-weight: 600; }
 
-/* Widgets --------------------------------------------------------------- */
+/* Controls ------------------------------------------------------------- */
+.rt-toolbar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.rt-control-note { font-size: 11px; line-height: 1.45; color: var(--ink-faint); margin-top: 6px; }
+.rt-control-note b { color: var(--ink-muted); font-weight: 600; }
+
 [data-testid="stWidgetLabel"] p {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif !important;
+  font-family: var(--sans) !important;
   font-size: 10px !important; letter-spacing: .12em; text-transform: uppercase;
-  color: var(--ink-muted) !important; font-weight: 600 !important;
+  color: var(--ink-faint) !important; font-weight: 600 !important;
 }
 [data-baseweb="select"] > div {
-  background: var(--surface) !important;
-  border: 1px solid var(--line) !important;
-  border-radius: 8px !important;
-  min-height: 44px !important;
-  font-size: 13.5px !important;
-  color: var(--ink) !important;
+  background: var(--surface) !important; border: 1px solid var(--line) !important;
+  border-radius: 8px !important; min-height: 40px !important;
+  font-size: 13px !important; color: var(--ink) !important;
 }
-[data-baseweb="select"] > div:hover { border-color: #C3CCD0 !important; }
+[data-baseweb="select"] > div:hover { border-color: var(--accent-line) !important; }
 [data-baseweb="select"] svg { color: var(--ink-muted); }
+
 [data-testid="stBaseButton-primary"], button[kind="primary"] {
   background: var(--accent) !important; border: 1px solid var(--accent) !important;
   color: #FFFFFF !important; border-radius: 8px !important;
   font-size: 13.5px !important; font-weight: 600 !important;
-  min-height: 44px !important; box-shadow: none !important;
+  min-height: 44px !important; box-shadow: var(--shadow) !important;
+  transition: background .14s ease, transform .1s ease;
 }
 [data-testid="stBaseButton-primary"]:hover, button[kind="primary"]:hover {
-  background: var(--accent-deep) !important; border-color: var(--accent-deep) !important;
+  background: var(--accent-hover) !important; border-color: var(--accent-hover) !important;
 }
+[data-testid="stBaseButton-primary"]:active { transform: translateY(1px); }
 [data-testid="stBaseButton-secondary"], button[kind="secondary"] {
   background: transparent !important; border: 1px solid var(--line) !important;
-  color: var(--ink) !important; border-radius: 8px !important;
+  color: var(--ink-muted) !important; border-radius: 8px !important;
   font-size: 12.5px !important; font-weight: 550 !important;
-  min-height: 38px !important; box-shadow: none !important;
+  min-height: 40px !important; box-shadow: none !important;
+  transition: border-color .14s ease, color .14s ease;
 }
 [data-testid="stBaseButton-secondary"]:hover, button[kind="secondary"]:hover {
-  border-color: #C3CCD0 !important; background: var(--surface) !important;
+  border-color: var(--accent-line) !important; color: var(--ink) !important;
 }
-button:focus-visible, [data-baseweb="select"]:focus-within {
+button:focus-visible, [data-baseweb="select"]:focus-within,
+[data-testid="stTextArea"] textarea:focus {
   outline: 2px solid var(--accent) !important; outline-offset: 2px !important;
 }
-[data-testid="stCaptionContainer"] p, .stCaption p {
-  font-size: 11.5px !important; color: var(--ink-muted) !important; line-height: 1.5;
-}
 [data-testid="stExpander"] {
-  border: 1px solid var(--line) !important; border-radius: 8px !important;
+  border: 1px solid var(--line-soft) !important; border-radius: 10px !important;
   background: var(--surface) !important; box-shadow: none !important;
 }
 [data-testid="stExpander"] summary {
-  font-size: 12.5px !important; font-weight: 550 !important; color: var(--ink) !important;
+  font-size: 12.5px !important; font-weight: 550 !important; color: var(--ink-muted) !important;
 }
-[data-testid="stExpander"] summary:hover { color: var(--accent) !important; }
-[data-testid="stStatusWidget"] { font-size: 12px; }
-
-/* Contract strip -------------------------------------------------------- */
-.rt-contract {
-  display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 18px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
-  padding: 14px 18px; margin: 24px 0 26px;
-}
-.rt-contract-label {
-  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--ink-muted); padding-top: 2px;
-}
-.rt-contract-text { font-size: 13.8px; line-height: 1.55; margin: 0; color: #26303A; }
-.rt-contract-bounds {
-  font-family: var(--mono); font-size: 11px; color: var(--ink-muted);
-  margin-top: 6px; letter-spacing: .01em;
+[data-testid="stExpander"] summary:hover { color: var(--ink) !important; }
+[data-testid="stCaptionContainer"] p, .stCaption p {
+  font-size: 11px !important; color: var(--ink-faint) !important; line-height: 1.5;
 }
 
-/* Code panes ------------------------------------------------------------ */
-.rt-panes {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px; align-items: stretch;
-}
+/* Code workspace ------------------------------------------------------- */
+.rt-panes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .rt-pane {
-  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
-  overflow: hidden; display: flex; flex-direction: column; min-width: 0;
+  background: var(--surface-deep); border: 1px solid var(--line);
+  border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
+  min-width: 0; transition: border-color .16s ease;
 }
+.rt-pane:focus-within { border-color: var(--accent-line); }
 .rt-pane-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 9px 14px; border-bottom: 1px solid var(--line);
-  background: #FBFCFB; min-height: 38px;
+  padding: 10px 14px; border-bottom: 1px solid var(--line-soft);
+  background: var(--surface); min-height: 40px;
 }
 .rt-pane-label {
-  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
-  text-transform: uppercase; color: var(--ink-muted); white-space: nowrap;
+  font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-muted); white-space: nowrap;
 }
 .rt-pane-label b { color: var(--ink); font-weight: 600; }
 .rt-pane-fn {
-  font-family: var(--mono); font-size: 10.5px; color: #8C969D;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 10px; color: var(--ink-faint); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
 }
-.rt-code { padding: 11px 0 12px; overflow-x: auto; flex: 1; }
-.rt-line {
-  display: flex; align-items: flex-start; min-height: 22px;
-  font-family: var(--mono); font-size: 12.75px; line-height: 22px;
-  white-space: pre; color: #20262E;
+.rt-editor { padding: 0; }
+[data-testid="stTextArea"] { background: transparent; }
+[data-testid="stTextArea"] textarea {
+  background: transparent !important; color: var(--ink) !important;
+  font-family: var(--mono) !important; font-size: 12.75px !important;
+  line-height: 21px !important; border: none !important;
+  padding: 14px 16px 16px !important; caret-color: var(--accent) !important;
+  resize: vertical; min-height: 190px;
 }
-.rt-ln {
-  width: 42px; flex: none; text-align: right; padding-right: 14px;
-  color: #A8B1B8; font-size: 10.5px; user-select: none;
+[data-testid="stTextArea"] textarea::placeholder { color: var(--ink-faint); }
+.rt-pane-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 14px; border-top: 1px solid var(--line-soft); background: var(--surface);
+  font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--ink-faint);
 }
-.rt-lc { padding-right: 20px; }
-.rt-line--changed { background: var(--danger-soft); box-shadow: inset 2px 0 0 var(--danger); }
-.rt-line--changed .rt-ln { color: #B07A80; }
+.rt-sig { font-family: var(--mono); font-size: 10px; color: var(--ink-muted); }
+.rt-sig .ok { color: var(--positive); }
+.rt-sig .bad { color: var(--danger); }
+.rt-diffcount { color: var(--ink-faint); }
+.rt-diffcount .n { color: var(--accent-hover); }
 
-/* Section head + provenance -------------------------------------------- */
+/* Sections ------------------------------------------------------------- */
 .rt-section {
   display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 18px; margin: 34px 0 14px;
-}
-.rt-section-title {
-  font-size: 17px !important; font-weight: 650 !important; letter-spacing: -.012em !important;
-  margin: 0 !important; padding: 0 !important; color: var(--ink) !important;
+  gap: 18px; margin: 32px 0 14px;
 }
 .rt-section-sub { font-size: 12px; color: var(--ink-muted); margin-top: 4px; }
-.rt-prov-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+.rt-prov-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .rt-prov {
-  font-family: var(--mono); font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase;
-  color: #44505A; background: var(--surface-muted); border: 1px solid var(--line);
-  border-radius: 4px; padding: 3px 7px; white-space: nowrap;
+  font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-muted); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px; white-space: nowrap;
 }
-.rt-prov--ai { color: var(--accent-deep); background: var(--accent-soft); border-color: #D6E0FF; }
-.rt-prov-note { font-family: var(--mono); font-size: 10.5px; color: var(--ink-muted); }
+.rt-prov--ai { color: var(--accent-hover); background: var(--accent-soft); border-color: var(--accent-line); }
+.rt-prov--engine { color: var(--positive); background: var(--positive-soft); border-color: var(--positive-line); }
 
-/* Summary --------------------------------------------------------------- */
+/* Summary -------------------------------------------------------------- */
 .rt-summary {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
   overflow: hidden; margin-bottom: 16px;
 }
-.rt-metric { padding: 11px 18px 12px; border-left: 1px solid var(--line); }
+.rt-metric { padding: 12px 18px 13px; border-left: 1px solid var(--line-soft); }
 .rt-metric:first-child { border-left: 0; }
 .rt-metric-label {
   display: flex; align-items: center; gap: 6px;
   font-size: 9.5px; letter-spacing: .11em; text-transform: uppercase;
-  color: var(--ink-muted); font-weight: 600; white-space: nowrap;
+  color: var(--ink-faint); font-weight: 600; white-space: nowrap;
 }
 .rt-metric-value {
-  font-family: var(--mono); font-size: 21px; font-weight: 500;
-  font-variant-numeric: tabular-nums; line-height: 1.3; margin-top: 2px;
+  font-family: var(--mono); font-size: 22px; font-weight: 500;
+  font-variant-numeric: tabular-nums; line-height: 1.3; margin-top: 2px; color: var(--ink);
 }
 .rt-metric--changed .rt-metric-value { color: var(--danger); }
 .rt-metric--error .rt-metric-value { color: var(--warning); }
@@ -295,36 +303,78 @@ button:focus-visible, [data-baseweb="select"]:focus-within {
 .rt-flag--danger { background: var(--danger); }
 .rt-flag--warning { background: var(--warning); }
 
-/* Matrix ---------------------------------------------------------------- */
-.rt-matrix-wrap {
-  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
-  overflow: hidden;
+/* Strongest counterexample --------------------------------------------- */
+.rt-highlight {
+  border: 1px solid var(--accent-line); border-radius: 12px;
+  background: linear-gradient(0deg, var(--accent-soft), var(--accent-soft)), var(--surface);
+  padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--shadow);
 }
-.rt-matrix-scroll { overflow-x: auto; }
-table.rt-matrix { width: 100%; border-collapse: collapse; min-width: 660px; }
-.rt-matrix thead th {
-  font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
-  color: var(--ink-muted); text-align: left; padding: 10px 16px;
-  background: #FBFCFB; border-bottom: 1px solid var(--line); font-weight: 600;
-  white-space: nowrap;
+.rt-highlight--none {
+  border-color: var(--line); background: var(--surface); box-shadow: none;
 }
-.rt-matrix td {
-  padding: 0 16px; height: 48px; border-top: 1px solid var(--line);
-  font-size: 13px; vertical-align: middle;
+.rt-highlight-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; margin-bottom: 14px; flex-wrap: wrap;
 }
-.rt-matrix tbody tr:first-child td { border-top: 0; }
-.rt-matrix tbody tr:hover td { background: #F8FAF9; }
-.rt-matrix .num {
-  width: 48px; font-family: var(--mono); font-size: 11px; color: #97A1A8;
+.rt-highlight-eyebrow {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--accent-hover); font-weight: 600;
 }
-.rt-matrix .mono {
+.rt-highlight--none .rt-highlight-eyebrow { color: var(--ink-faint); }
+.rt-compare {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px; align-items: center;
+}
+.rt-side { min-width: 0; }
+.rt-side-label {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px;
+}
+.rt-side-value {
+  font-family: var(--mono); font-size: 26px; font-variant-numeric: tabular-nums;
+  color: var(--ink); line-height: 1.15; word-break: break-all;
+}
+.rt-side--old .rt-side-value { color: var(--ink); }
+.rt-side--new .rt-side-value { color: var(--danger); }
+.rt-arrow { color: var(--ink-faint); font-family: var(--mono); font-size: 18px; }
+.rt-highlight-input {
+  font-family: var(--mono); font-size: 12px; color: var(--ink-muted);
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft);
+  overflow-x: auto; white-space: nowrap;
+}
+.rt-highlight-input b { color: var(--ink); font-weight: 500; }
+.rt-highlight-input .delta { color: var(--danger); }
+.rt-highlight-reason { font-size: 12px; color: var(--ink-muted); margin-top: 6px; }
+
+/* Table ---------------------------------------------------------------- */
+.rt-table-wrap {
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); overflow: hidden;
+}
+.rt-table-scroll { overflow-x: auto; }
+table.rt-table { width: 100%; border-collapse: collapse; min-width: 640px; }
+.rt-table thead th {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-faint); text-align: left; padding: 10px 16px;
+  background: var(--surface-raised); border-bottom: 1px solid var(--line);
+  font-weight: 600; white-space: nowrap;
+}
+.rt-table td {
+  padding: 0 16px; height: 46px; border-top: 1px solid var(--line-soft);
+  font-size: 12.5px; vertical-align: middle;
+}
+.rt-table tbody tr:first-child td { border-top: 0; }
+.rt-table tbody tr { transition: background .12s ease; }
+.rt-table tbody tr:hover td { background: var(--surface-raised); }
+.rt-table .num { width: 46px; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.rt-table .mono {
   font-family: var(--mono); font-size: 12.25px; font-variant-numeric: tabular-nums;
-  color: #20262E; white-space: nowrap;
+  color: var(--ink); white-space: nowrap;
 }
-.rt-matrix .out { width: 150px; }
-.rt-matrix .empty { color: #9AA4AB; }
+.rt-table .out { width: 148px; }
+.rt-table .empty { color: var(--ink-faint); }
 .rt-row--changed td { background: var(--danger-soft); }
-.rt-row--changed:hover td { background: #F8E6E9 !important; }
+.rt-row--changed:hover td { background: rgba(255, 107, 107, 0.18) !important; }
 .rt-row--changed td:first-child { box-shadow: inset 2px 0 0 var(--danger); }
 .rt-row--selected td { background: var(--accent-soft) !important; }
 .rt-row--selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
@@ -332,127 +382,137 @@ table.rt-matrix { width: 100%; border-collapse: collapse; min-width: 660px; }
 
 .rt-chip {
   display: inline-flex; align-items: center; gap: 6px; border-radius: 5px;
-  font-size: 11px; font-weight: 600; padding: 3px 8px; white-space: nowrap;
-  border: 1px solid transparent;
+  font-size: 10.5px; font-weight: 600; padding: 3px 8px; white-space: nowrap;
+  border: 1px solid transparent; font-family: var(--sans);
 }
-.rt-chip .rt-dot { width: 5px; height: 5px; }
-.rt-chip--same { color: var(--positive); background: var(--positive-soft); border-color: #D9EADD; }
-.rt-chip--changed { color: var(--danger); background: var(--danger-soft); border-color: #F1D6DA; }
-.rt-chip--error { color: var(--warning); background: var(--warning-soft); border-color: #F0DFC0; }
-.rt-matrix .rt-chip--changed { background: #FFFFFF; }
+.rt-chip .rt-dot { width: 5px; height: 5px; box-shadow: none; }
+.rt-chip--same { color: var(--positive); background: var(--positive-soft); border-color: var(--positive-line); }
+.rt-chip--same .rt-dot { background: var(--positive); }
+.rt-chip--changed { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-line); }
+.rt-chip--changed .rt-dot { background: var(--danger); }
+.rt-chip--error { color: var(--warning); background: var(--warning-soft); border-color: rgba(224,164,88,.34); }
+.rt-chip--error .rt-dot { background: var(--warning); }
+.rt-table .rt-chip--changed { background: transparent; }
 
-/* Inspector ------------------------------------------------------------- */
+/* Inspector ------------------------------------------------------------ */
 .rt-inspector {
-  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
-  padding: 17px 20px 18px; margin-top: 10px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+  padding: 18px 20px 19px; margin-top: 12px;
 }
 .rt-inspector-head {
   display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 16px; border-bottom: 1px solid var(--line);
-  padding-bottom: 12px; margin-bottom: 15px;
+  gap: 16px; border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 13px; margin-bottom: 16px;
 }
 .rt-inspector-title { font-size: 14.5px; font-weight: 650; letter-spacing: -.008em; }
-.rt-inspector-title span { color: var(--ink-muted); font-weight: 500; }
+.rt-inspector-title span { color: var(--ink-faint); font-weight: 500; }
 .rt-field-label {
-  font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
-  color: var(--ink-muted); font-weight: 600; margin-bottom: 6px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-faint); font-weight: 600; margin-bottom: 7px;
 }
 .rt-args {
-  font-family: var(--mono); font-size: 12.8px; color: #20262E;
-  background: var(--surface-muted); border-radius: 6px; padding: 9px 12px;
-  margin-bottom: 14px; overflow-x: auto; white-space: nowrap;
+  font-family: var(--mono); font-size: 12.8px; color: var(--ink);
+  background: var(--surface-deep); border: 1px solid var(--line-soft);
+  border-radius: 7px; padding: 10px 12px; margin-bottom: 14px;
+  overflow-x: auto; white-space: nowrap;
 }
-.rt-args b { font-weight: 500; color: var(--ink-muted); }
+.rt-args b { font-weight: 400; color: var(--ink-muted); }
 .rt-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.rt-obs { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 11px; }
-.rt-obs--changed { border-color: #ECCED3; }
-.rt-obs--error { border-color: #EDDCBC; background: #FFFCF6; }
+.rt-obs {
+  border: 1px solid var(--line-soft); border-radius: 8px; padding: 11px 13px 12px;
+  background: var(--surface-deep);
+}
 .rt-obs-value {
   font-family: var(--mono); font-size: 15.5px; font-variant-numeric: tabular-nums;
   color: var(--ink); word-break: break-word;
 }
+.rt-obs--error { border-color: rgba(224,164,88,.3); }
 .rt-obs--error .rt-obs-value { color: var(--warning); font-size: 13.5px; }
-.rt-obs-sub { font-family: var(--mono); font-size: 10.5px; color: var(--ink-muted); margin-top: 3px; }
-.rt-delta {
-  font-family: var(--mono); font-size: 11.5px; color: var(--ink-muted);
-  margin-top: 10px;
-}
+.rt-obs-sub { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-top: 4px; }
+.rt-delta { font-family: var(--mono); font-size: 11.5px; color: var(--ink-muted); margin-top: 11px; }
 .rt-delta b { color: var(--ink); font-weight: 500; }
-.rt-rationale { margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--line); }
-.rt-rationale p { margin: 0; font-size: 13.2px; line-height: 1.55; color: #26303A; }
-.rt-subnote { font-size: 11px; color: var(--ink-muted); margin-top: 5px; display: block; }
-.rt-note { font-size: 12px; color: var(--warning); margin-top: 9px; }
+.rt-rationale { margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--line-soft); }
+.rt-rationale p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink); }
+.rt-subnote { font-size: 11px; color: var(--ink-faint); margin-top: 6px; display: block; }
+.rt-note { font-size: 12px; color: var(--warning); margin-top: 10px; }
 
-/* Notices, empty, details ----------------------------------------------- */
+/* Notices, empty, details ---------------------------------------------- */
 .rt-notice {
   border: 1px solid var(--line); border-left: 3px solid var(--accent);
-  background: var(--surface); border-radius: 8px; padding: 13px 17px;
-  margin: 0 0 16px;
+  background: var(--surface); border-radius: 10px; padding: 14px 17px; margin: 0 0 16px;
 }
 .rt-notice--error, .rt-notice--changed { border-left-color: var(--danger); }
 .rt-notice--warning { border-left-color: var(--warning); }
 .rt-notice-label {
-  font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
-  color: var(--ink-muted); font-weight: 600; margin-bottom: 5px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-faint); font-weight: 600; margin-bottom: 6px;
 }
-.rt-notice p { margin: 0; font-size: 13.2px; line-height: 1.5; color: #26303A; }
+.rt-notice p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink); }
 .rt-notice .rt-notice-extra {
-  margin-top: 6px; font-family: var(--mono); font-size: 11px;
+  margin-top: 7px; font-family: var(--mono); font-size: 10.5px;
   color: var(--ink-muted); line-height: 1.5;
 }
-.rt-empty {
-  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
-  padding: 26px 24px; margin-top: 10px;
+.rt-notice code {
+  font-size: 11px; background: var(--surface-deep); color: var(--accent-hover);
+  padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line-soft);
 }
-.rt-empty-title { font-size: 14.5px; font-weight: 600; margin-bottom: 6px; }
-.rt-empty p { margin: 0; font-size: 13.2px; line-height: 1.55; color: var(--ink-muted); max-width: 78ch; }
+.rt-empty {
+  border: 1px dashed var(--line); border-radius: 12px; background: var(--surface);
+  padding: 28px 24px; margin-top: 10px;
+}
+.rt-empty-title { font-size: 14.5px; font-weight: 600; margin-bottom: 7px; color: var(--ink); }
+.rt-empty p {
+  margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-muted); max-width: 80ch;
+}
 
 .rt-detail-grid {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px 20px; margin-bottom: 4px;
+  gap: 15px 20px; margin-bottom: 4px;
 }
 .rt-detail-label {
-  font-size: 9.5px; letter-spacing: .11em; text-transform: uppercase;
-  color: var(--ink-muted); font-weight: 600; margin-bottom: 3px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: .11em; text-transform: uppercase;
+  color: var(--ink-faint); font-weight: 600; margin-bottom: 4px;
 }
 .rt-detail-value { font-family: var(--mono); font-size: 12px; color: var(--ink); }
-.rt-rejects { margin: 10px 0 0; padding: 0; list-style: none; }
+.rt-rejects { margin: 12px 0 0; padding: 0; list-style: none; }
 .rt-rejects li {
-  border-top: 1px solid var(--line); padding: 8px 0;
-  font-size: 12px; color: #3A454E; line-height: 1.5;
+  border-top: 1px solid var(--line-soft); padding: 9px 0;
+  font-size: 12px; color: var(--ink-muted); line-height: 1.5;
 }
-.rt-rejects li b { font-family: var(--mono); font-weight: 500; color: var(--ink-muted); }
+.rt-rejects li b { font-family: var(--mono); font-weight: 500; color: var(--ink-faint); }
 .rt-rejects code {
   display: block; font-family: var(--mono); font-size: 10.5px;
-  color: #8C969D; margin-top: 2px; overflow-wrap: anywhere;
+  color: var(--ink-faint); margin-top: 3px; overflow-wrap: anywhere;
 }
 
-/* Footer ---------------------------------------------------------------- */
+/* Footer --------------------------------------------------------------- */
 .rt-footer {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;
-  margin-top: 38px; padding-top: 15px; border-top: 1px solid var(--line);
-  font-size: 11px; line-height: 1.55; color: var(--ink-muted);
+  margin-top: 38px; padding-top: 16px; border-top: 1px solid var(--line-soft);
+  font-size: 11px; line-height: 1.55; color: var(--ink-faint);
 }
-.rt-footer b { color: #44505A; font-weight: 600; }
+.rt-footer b { color: var(--ink-muted); font-weight: 600; }
 .rt-footer .rt-foot-right { text-align: right; }
-.rt-footer .rt-mono { font-family: var(--mono); font-size: 10.5px; }
+.rt-footer .rt-mono { font-family: var(--mono); font-size: 10px; }
 
-/* Responsive ------------------------------------------------------------ */
+/* Responsive ----------------------------------------------------------- */
 @media (max-width: 900px) {
   [data-testid="stMainBlockContainer"] { padding: 1rem 18px 3.5rem; }
-  .rt-header { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 24px; }
+  .rt-header { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 22px; }
   .rt-brand-sub { display: none; }
-  .rt-title { font-size: 27px !important; }
+  .rt-title { font-size: 26px !important; }
   .rt-panes, .rt-grid-2 { grid-template-columns: minmax(0, 1fr); }
-  .rt-contract { grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .rt-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .rt-metric:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }
-  .rt-metric:nth-child(4) { border-top: 1px solid var(--line); }
+  .rt-metric:nth-child(3) { border-left: 0; border-top: 1px solid var(--line-soft); }
+  .rt-metric:nth-child(4) { border-top: 1px solid var(--line-soft); }
   .rt-section { flex-direction: column; align-items: flex-start; gap: 8px; }
   .rt-prov-row { justify-content: flex-start; }
+  .rt-compare { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .rt-arrow { transform: rotate(90deg); justify-self: start; }
   .rt-footer { flex-direction: column; gap: 10px; }
   .rt-footer .rt-foot-right { text-align: left; }
   .rt-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rt-side-value { font-size: 21px; }
 }
 """
 
@@ -460,7 +520,7 @@ st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
-# Small rendering helpers
+# Small helpers
 # ---------------------------------------------------------------------------
 
 
@@ -473,7 +533,8 @@ def esc(value: object) -> str:
 
 
 def inline_code(text: str) -> str:
-    """Escape text, then turn `backticked` spans into inline <code>."""
+    import re
+
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", esc(text))
 
 
@@ -485,19 +546,11 @@ def format_argument(value: Any) -> str:
 
 @st.cache_data(ttl=8, show_spinner=False)
 def read_model_status() -> ModelStatus:
-    """Cached health check; short TTL so the header reflects reality."""
+    """Cached real health check; short TTL so the header reflects reality."""
     return ollama_client.check_model()
 
 
-def reset_results() -> None:
-    st.session_state["run"] = None
-    st.session_state["failure"] = None
-    st.session_state["pending"] = None
-    st.session_state["generation_notice"] = ""
-
-
 def header_markup(status: ModelStatus | None = None) -> str:
-    """status=None renders the honest pre-flight state while /api/tags is called."""
     if status is None:
         dot, text = "rt-dot--wait", "Local / Qwen2.5-Coder 7B · Checking"
         detail = "Checking Ollama at localhost:11434."
@@ -511,20 +564,14 @@ def header_markup(status: ModelStatus | None = None) -> str:
         f'<div class="rt-header">'
         f'<div class="rt-brand"><span class="rt-mark">R/</span>'
         f'<span class="rt-brand-name">RippleTest</span>'
-        f'<span class="rt-brand-sub">Differential testing</span></div>'
+        f'<span class="rt-brand-sub">Code-change intelligence</span></div>'
         f'<span class="rt-status" title="{esc(detail)}">'
         f'<span class="rt-dot {dot}"></span>{esc(text)}</span>'
         f"</div>"
     )
 
 
-def notice_markup(
-    label: str,
-    message: str,
-    *,
-    variant: str = "info",
-    extra: str = "",
-) -> str:
+def notice_markup(label: str, message: str, *, variant: str = "info", extra: str = "") -> str:
     tone = {
         "info": "",
         "error": " rt-notice--error",
@@ -544,7 +591,7 @@ def status_notice(status: ModelStatus) -> str:
         return notice_markup(
             "Local model not installed",
             f"Ollama is running, but <code>{esc(MODEL_NAME)}</code> is not installed. "
-            f"Run <code>ollama pull {esc(MODEL_NAME)}</code>, then check the connection again.",
+            f"Run <code>ollama pull {esc(MODEL_NAME)}</code>, then check again.",
             variant="error",
             extra=status.detail,
         )
@@ -558,69 +605,13 @@ def status_notice(status: ModelStatus) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Code panes
+# Result rendering
 # ---------------------------------------------------------------------------
-
-
-def changed_lines(left: str, right: str) -> tuple[set[int], set[int]]:
-    left_lines = left.rstrip("\n").split("\n")
-    right_lines = right.rstrip("\n").split("\n")
-    matcher = difflib.SequenceMatcher(a=left_lines, b=right_lines, autojunk=False)
-    left_changed: set[int] = set()
-    right_changed: set[int] = set()
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag in ("replace", "delete"):
-            left_changed.update(range(i1, i2))
-        if tag in ("replace", "insert"):
-            right_changed.update(range(j1, j2))
-    return left_changed, right_changed
-
-
-def code_pane(
-    number: str,
-    label: str,
-    function_name: str,
-    source: str,
-    changed: set[int],
-) -> str:
-    lines = source.rstrip("\n").split("\n")
-    rendered_lines = []
-    for index, line in enumerate(lines):
-        css = "rt-line rt-line--changed" if index in changed else "rt-line"
-        rendered_lines.append(
-            f'<div class="{css}"><span class="rt-ln">{index + 1}</span>'
-            f'<span class="rt-lc">{esc(line) if line else " "}</span></div>'
-        )
-    return (
-        f'<section class="rt-pane">'
-        f'<div class="rt-pane-head">'
-        f'<span class="rt-pane-label"><b>{esc(number)}</b> / {esc(label)}</span>'
-        f'<span class="rt-pane-fn">{esc(function_name)} · read-only</span>'
-        f"</div>"
-        f'<div class="rt-code">{"".join(rendered_lines)}</div>'
-        f"</section>"
-    )
-
-
-def code_panes(scenario: Scenario) -> None:
-    left_changed, right_changed = changed_lines(scenario.original_source, scenario.modified_source)
-    render(
-        '<div class="rt-panes">'
-        + code_pane("01", "Original", scenario.function_name, scenario.original_source, left_changed)
-        + code_pane("02", "Modified", scenario.function_name, scenario.modified_source, right_changed)
-        + "</div>"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Results
-# ---------------------------------------------------------------------------
-
 
 CHIPS = {
     "same": ("rt-chip--same", "Same result"),
-    "changed": ("rt-chip--changed", "Changed"),
-    "error": ("rt-chip--error", "Error"),
+    "changed": ("rt-chip--changed", "Behaviour changed"),
+    "error": ("rt-chip--error", "Execution error"),
 }
 OUTCOME_ORDER = {"changed": 0, "error": 1, "same": 2}
 
@@ -630,50 +621,22 @@ def chip(classification: str) -> str:
     return f'<span class="rt-chip {tone}"><span class="rt-dot"></span>{label}</span>'
 
 
-def outcome_cell(result: CaseResult, outcome) -> str:
+def outcome_cell(outcome) -> str:
     if outcome.kind == "exception":
         return f'<span class="rt-exc">{esc(outcome.exception_type)}</span>'
     return esc(outcome.display)
 
 
-def matrix_markup(results: tuple[CaseResult, ...], selected_number: int) -> str:
-    ordered = sorted(results, key=lambda item: (OUTCOME_ORDER[item.classification], item.number))
-    rows = []
-    for result in ordered:
-        classes = ["rt-row"]
-        if result.classification == "changed":
-            classes.append("rt-row--changed")
-        if result.number == selected_number:
-            classes.append("rt-row--selected")
-        arguments = ", ".join(
-            f"{name}={format_argument(value)}" for name, value in result.arguments.items()
-        )
-        rows.append(
-            f'<tr class="{" ".join(classes)}">'
-            f'<td class="num">{result.number:02d}</td>'
-            f'<td class="mono">{esc(arguments)}</td>'
-            f'<td class="mono">{outcome_cell(result, result.original)}</td>'
-            f'<td class="mono">{outcome_cell(result, result.modified)}</td>'
-            f'<td class="out">{chip(result.classification)}</td>'
-            f"</tr>"
-        )
-    return (
-        '<div class="rt-matrix-wrap"><div class="rt-matrix-scroll">'
-        '<table class="rt-matrix"><thead><tr>'
-        '<th scope="col">#</th><th scope="col">Input</th>'
-        '<th scope="col">Original</th><th scope="col">Modified</th>'
-        '<th scope="col">Outcome</th>'
-        f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
-        "</div></div>"
-    )
+def sort_results(results: tuple[CaseResult, ...]) -> list[CaseResult]:
+    return sorted(results, key=lambda item: (OUTCOME_ORDER[item.classification], item.number))
 
 
 def summary_markup(summary) -> str:
     metrics = [
         ("Executed", summary.executed, ""),
-        ("Same outcome", summary.same, ""),
-        ("Behaviour changed", summary.changed, "changed"),
-        ("Execution errors", summary.errors, "error"),
+        ("Same", summary.same, ""),
+        ("Changed", summary.changed, "changed"),
+        ("Errors", summary.errors, "error"),
     ]
     cells = []
     for label, value, tone in metrics:
@@ -692,7 +655,106 @@ def summary_markup(summary) -> str:
     return f'<div class="rt-summary">{"".join(cells)}</div>'
 
 
-def inspector_markup(scenario: Scenario, result: CaseResult) -> str:
+def strongest_counterexample(results: tuple[CaseResult, ...]) -> CaseResult | None:
+    """The changed case with the largest numeric swing. Real data, no scoring."""
+    changed = [item for item in results if item.classification == "changed"]
+    if not changed:
+        return None
+
+    def magnitude(item: CaseResult) -> float:
+        if item.delta is not None:
+            return abs(item.delta)
+        # Non-numeric divergence: fall back to the observed string difference.
+        return float(len(item.modified.display) + len(item.original.display))
+
+    return max(changed, key=magnitude)
+
+
+def highlight_markup(results: tuple[CaseResult, ...], function_name: str) -> str:
+    best = strongest_counterexample(results)
+    if best is None:
+        summary_errors = sum(1 for item in results if item.classification == "error")
+        if summary_errors:
+            body = (
+                f"{summary_errors} case(s) raised an exception. No completed divergence was "
+                "observed, so there is no counterexample to show."
+            )
+        else:
+            body = (
+                f"All {len(results)} executed cases returned matching values. "
+                "This does not establish that the change is regression-free."
+            )
+        return (
+            '<div class="rt-highlight rt-highlight--none">'
+            '<div class="rt-highlight-head">'
+            '<span class="rt-highlight-eyebrow">Strongest observed divergence</span>'
+            "</div>"
+            f"<p style='margin:0;font-size:13px;line-height:1.55;color:var(--ink-muted)'>{body}</p>"
+            "</div>"
+        )
+
+    arguments = ", ".join(
+        f"{name}={format_argument(value)}" for name, value in best.arguments.items()
+    )
+    delta = f"Δ {best.delta:+.12g}" if best.delta is not None else "values differ"
+    old_value = (
+        best.original.display if best.original.kind == "value" else best.original.exception_type
+    )
+    new_value = (
+        best.modified.display if best.modified.kind == "value" else best.modified.exception_type
+    )
+    return (
+        '<div class="rt-highlight">'
+        '<div class="rt-highlight-head">'
+        '<span class="rt-highlight-eyebrow">Strongest observed divergence</span>'
+        f"{chip(best.classification)}</div>"
+        '<div class="rt-compare">'
+        f'<div class="rt-side rt-side--old"><div class="rt-side-label">01 / Original</div>'
+        f'<div class="rt-side-value">{esc(old_value)}</div></div>'
+        '<div class="rt-arrow">→</div>'
+        f'<div class="rt-side rt-side--new"><div class="rt-side-label">02 / Modified</div>'
+        f'<div class="rt-side-value">{esc(new_value)}</div></div>'
+        "</div>"
+        f'<div class="rt-highlight-input">case #{best.number:02d} · <b>{esc(arguments)}</b>'
+        f' &nbsp;·&nbsp; <span class="delta">{esc(delta)}</span>'
+        f" &nbsp;·&nbsp; {esc(function_name)}</div>"
+        f'<div class="rt-highlight-reason">{esc(best.reason)}</div>'
+        "</div>"
+    )
+
+
+def table_markup(results: tuple[CaseResult, ...], selected_number: int) -> str:
+    rows = []
+    for result in sort_results(results):
+        classes = ["rt-row"]
+        if result.classification == "changed":
+            classes.append("rt-row--changed")
+        if result.number == selected_number:
+            classes.append("rt-row--selected")
+        arguments = ", ".join(
+            f"{name}={format_argument(value)}" for name, value in result.arguments.items()
+        )
+        rows.append(
+            f'<tr class="{" ".join(classes)}">'
+            f'<td class="num">{result.number:02d}</td>'
+            f'<td class="mono">{esc(arguments)}</td>'
+            f'<td class="mono">{outcome_cell(result.original)}</td>'
+            f'<td class="mono">{outcome_cell(result.modified)}</td>'
+            f'<td class="out">{chip(result.classification)}</td>'
+            f"</tr>"
+        )
+    return (
+        '<div class="rt-table-wrap"><div class="rt-table-scroll">'
+        '<table class="rt-table"><thead><tr>'
+        '<th scope="col">#</th><th scope="col">Input</th>'
+        '<th scope="col">Original</th><th scope="col">Modified</th>'
+        '<th scope="col">Outcome</th>'
+        f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
+        "</div></div>"
+    )
+
+
+def inspector_markup(function_name: str, result: CaseResult) -> str:
     arguments = " &nbsp; ".join(
         f"<b>{esc(name)}</b> = {esc(format_argument(value))}"
         for name, value in result.arguments.items()
@@ -705,51 +767,39 @@ def inspector_markup(scenario: Scenario, result: CaseResult) -> str:
                 f'<div class="rt-obs rt-obs--error">'
                 f'<div class="rt-field-label">{esc(label)}</div>'
                 f'<div class="rt-obs-value">{esc(outcome.exception_type)}</div>'
-                f'<div class="rt-obs-sub">{esc(note)}</div>'
-                f"</div>"
+                f'<div class="rt-obs-sub">{esc(note)}</div></div>'
             )
         return (
-            f'<div class="rt-obs">'
-            f'<div class="rt-field-label">{esc(label)}</div>'
+            f'<div class="rt-obs"><div class="rt-field-label">{esc(label)}</div>'
             f'<div class="rt-obs-value">{esc(outcome.display)}</div>'
-            f'<div class="rt-obs-sub">{esc(type(outcome.value).__name__)}</div>'
-            f"</div>"
+            f'<div class="rt-obs-sub">{esc(type(outcome.value).__name__)}</div></div>'
         )
 
-    delta = ""
-    if result.delta is not None:
-        delta = (
-            f'<div class="rt-delta">modified − original = '
-            f"<b>{result.delta:+.12g}</b></div>"
-        )
-
+    delta = f'<div class="rt-delta">modified − original = <b>{result.delta:+.12g}</b></div>' if result.delta is not None else ""
     if result.provenance == "ai":
         reason_label = "Why the model proposed it"
         subnote = "Model suggestion, not execution evidence. The outputs above come from Python."
     else:
         reason_label = "Why this baseline case exists"
         subnote = "Pre-written case. This run did not use the model."
-
     note = f'<div class="rt-note">{esc(result.note)}</div>' if result.note else ""
 
     return (
         '<div class="rt-inspector">'
-        f'<div class="rt-inspector-head">'
+        '<div class="rt-inspector-head">'
         f'<div class="rt-inspector-title">Case {result.number:02d} '
-        f'<span>/ {esc(scenario.function_name)}</span></div>'
+        f"<span>/ {esc(function_name)}</span></div>"
         f"{chip(result.classification)}</div>"
-        f'<div class="rt-field-label">Identical arguments passed to both versions</div>'
+        '<div class="rt-field-label">Identical arguments passed to both versions</div>'
         f'<div class="rt-args">{arguments}</div>'
         f'<div class="rt-grid-2">'
         f'{observation("01 / Original result", result.original)}'
         f'{observation("02 / Modified result", result.modified)}'
-        f"</div>"
-        f"{delta}{note}"
-        f'<div class="rt-rationale">'
-        f'<div class="rt-field-label">{reason_label}</div>'
+        f"</div>{delta}{note}"
+        f'<div class="rt-rationale"><div class="rt-field-label">{reason_label}</div>'
         f"<p>{esc(result.reason)}</p>"
-        f'<span class="rt-subnote">{subnote}</span>'
-        f"</div></div>"
+        f'<span class="rt-subnote">{subnote}</span></div>'
+        "</div>"
     )
 
 
@@ -767,9 +817,8 @@ def rejected_markup(rejected: tuple[RejectedCase, ...]) -> str:
 def run_details(run) -> None:
     with st.expander("Run details, validation, and export"):
         request_time = f"{run.duration_seconds:.1f}s" if run.duration_seconds is not None else "—"
-        schema_note = "—"
-        if run.provenance == "ai":
-            schema_note = "Numeric arguments validated"
+        engine = run.engine if hasattr(run, "engine") else ENGINE_TRUSTED
+        engine_note = ENGINE_NOTES.get(engine, "")
         render(
             '<div class="rt-detail-grid">'
             f'<div><div class="rt-detail-label">Input source</div>'
@@ -779,6 +828,8 @@ def run_details(run) -> None:
             f'<div class="rt-detail-value">{esc(run.model or "none (curated)")}</div></div>'
             f'<div><div class="rt-detail-label">Request time</div>'
             f'<div class="rt-detail-value">{esc(request_time)}</div></div>'
+            f'<div><div class="rt-detail-label">Execution engine</div>'
+            f'<div class="rt-detail-value">{esc(run.engine_label)}</div></div>'
             f'<div><div class="rt-detail-label">Comparison tolerance</div>'
             f'<div class="rt-detail-value">rel 1e-9 · abs 1e-9</div></div>'
             f'<div><div class="rt-detail-label">Proposed</div>'
@@ -787,10 +838,9 @@ def run_details(run) -> None:
             f'<div class="rt-detail-value">{len(run.validation.accepted)}</div></div>'
             f'<div><div class="rt-detail-label">Rejected</div>'
             f'<div class="rt-detail-value">{len(run.validation.rejected)}</div></div>'
-            f'<div><div class="rt-detail-label">Input handling</div>'
-            f'<div class="rt-detail-value">{esc(schema_note)}</div></div>'
-            f"</div>"
+            "</div>"
         )
+        st.caption(engine_note)
         if run.validation.rejected:
             render(
                 '<div class="rt-field-label" style="margin-top:14px">Rejected proposals</div>'
@@ -798,10 +848,6 @@ def run_details(run) -> None:
             )
         else:
             st.caption("Every proposed case passed validation and was executed.")
-        st.caption(
-            "Only bundled, pre-reviewed functions were called. The model supplies numeric "
-            "arguments only — never executable code."
-        )
         st.download_button(
             "Download JSON report",
             data=json.dumps(run_report(run), indent=2, ensure_ascii=False),
@@ -811,61 +857,43 @@ def run_details(run) -> None:
         )
 
 
-def render_run(scenario: Scenario, run) -> None:
+def render_run(run) -> None:
     summary = run.summary
     provenance = (
         f'<span class="rt-prov rt-prov--ai">AI-generated inputs</span>'
-        f'<span class="rt-prov-note">{esc(run.model or MODEL_NAME)} · local Ollama</span>'
+        f'<span class="rt-prov">{esc(run.model or MODEL_NAME)} · local Ollama</span>'
         if run.provenance == "ai"
         else '<span class="rt-prov">Curated baseline</span>'
-        '<span class="rt-prov-note">pre-written cases · not AI-generated</span>'
+        '<span class="rt-prov">pre-written · not AI-generated</span>'
     )
+    engine = f'<span class="rt-prov rt-prov--engine">{esc(run.engine_label)}</span>'
     stamp = datetime.fromisoformat(run.created_at).astimezone().strftime("%H:%M")
 
     render(
-        f'<div class="rt-section">'
-        f'<div><h2 class="rt-section-title">Observed behaviour</h2>'
+        f'<div class="rt-section"><div>'
+        f'<h2 class="rt-section-title">Observed behaviour</h2>'
         f'<div class="rt-section-sub">{summary.executed} cases executed at {stamp}. '
         f"Outcomes come from real calls to both versions.</div></div>"
-        f'<div class="rt-prov-row">{provenance}</div></div>'
+        f'<div class="rt-prov-row">{provenance}{engine}</div></div>'
     )
     render(summary_markup(summary))
+    render(highlight_markup(run.results, run.function_name))
 
-    ordered = sorted(
-        run.results, key=lambda item: (OUTCOME_ORDER[item.classification], item.number)
-    )
+    ordered = sort_results(run.results)
     options = [item.number for item in ordered]
     key = f"inspect_{run.run_id}"
     if st.session_state.get(key) not in options:
         st.session_state[key] = options[0]
     selected_number = st.session_state[key]
 
-    if summary.changed:
-        render(
-            notice_markup(
-                "Behaviour changed",
-                f"{summary.changed} of {summary.executed} executed cases returned a different "
-                "outcome. Review the evidence below; a difference is not automatically a bug.",
-                variant="changed",
-            )
-        )
-    else:
-        render(
-            notice_markup(
-                "No behavioural differences observed",
-                f"All {summary.executed} executed cases produced matching outcomes. "
-                "This does not establish that the change is regression-free.",
-            )
-        )
-
-    render(matrix_markup(run.results, selected_number))
-    st.caption("Sorted by outcome; case numbers are stable. Select a case to inspect its evidence.")
+    render(table_markup(run.results, selected_number))
+    st.caption(
+        "Sorted by outcome; case numbers are stable. Select a case to inspect its evidence."
+    )
 
     head_left, head_right = st.columns([2.2, 1], gap="large")
     with head_left:
-        render(
-            '<h2 class="rt-section-title" style="margin-top:18px">Case evidence</h2>'
-        )
+        render('<h2 class="rt-section-title" style="margin-top:16px">Case evidence</h2>')
     with head_right:
         st.selectbox(
             "Inspect case",
@@ -879,15 +907,15 @@ def render_run(scenario: Scenario, run) -> None:
         )
 
     selected = next(item for item in run.results if item.number == selected_number)
-    render(inspector_markup(scenario, selected))
+    render(inspector_markup(run.function_name, selected))
     run_details(run)
 
 
 def render_failure(failure: dict[str, Any]) -> None:
     render(
         notice_markup(
-            failure.get("title", "Run failed"),
-            failure.get("message", "The run could not be completed."),
+            failure.get("title", "Analysis failed"),
+            failure.get("message", "The analysis could not be completed."),
             variant="error",
             extra=failure.get("detail", ""),
         )
@@ -907,18 +935,38 @@ def render_failure(failure: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Actions that make real requests and execute trusted code
+# Analysis: parse -> model -> validate -> execute -> compare
 # ---------------------------------------------------------------------------
 
 
-def perform_generation(scenario: Scenario) -> None:
+def perform_analysis(original_source: str, modified_source: str) -> None:
     st.session_state["failure"] = None
     st.session_state["run"] = None
-    st.session_state["generation_notice"] = ""
 
-    with st.status("Generating test inputs", expanded=True) as box:
+    with st.status("Analysing change", expanded=True) as box:
+        st.write("Parsing both versions")
+
+        try:
+            target = resolve_execution_target(original_source, modified_source)
+        except EditError as exc:
+            box.update(label="Unsupported Python in the editor", state="error")
+            st.session_state["failure"] = {
+                "kind": "unsupported_syntax",
+                "title": "Unsupported Python in the editor",
+                "message": esc(
+                    "RippleTest only executes a small, safe numeric subset: one function, "
+                    "numeric parameters, and a single return expression. The pasted code was "
+                    "not executed, and no results were produced."
+                ),
+                "detail": str(exc),
+                "raw": "",
+                "rejected": (),
+            }
+            return
+
+        engine = engine_for(target)
         st.write(f"Requesting {MODEL_NAME} from local Ollama")
-        generation = ollama_client.generate_test_cases(scenario)
+        generation = ollama_client.generate_test_cases(target)
 
         if not generation.ok:
             box.update(label="The local model request failed", state="error")
@@ -938,14 +986,10 @@ def perform_generation(scenario: Scenario) -> None:
             }
             return
 
-        if generation.notice:
-            st.write(generation.notice)
-            st.session_state["generation_notice"] = generation.notice
-
         st.write("Validating proposed inputs")
         try:
             payload = parse_json_content(generation.raw_content)
-            validation = validate_cases(scenario, payload)
+            validation = validate_cases(target, payload)
         except ModelResponseError as exc:
             box.update(label="The model reply could not be used", state="error")
             st.session_state["failure"] = {
@@ -965,7 +1009,7 @@ def perform_generation(scenario: Scenario) -> None:
                 "title": "No usable test inputs",
                 "message": (
                     f"The model returned {validation.proposed_count} proposals, but none passed "
-                    "validation. Nothing was executed. Generate again, or try the curated baseline."
+                    "validation. Nothing was executed. Edit the code or analyse again."
                 ),
                 "detail": "",
                 "raw": generation.raw_content,
@@ -973,14 +1017,9 @@ def perform_generation(scenario: Scenario) -> None:
             }
             return
 
-        if len(validation.accepted) < 5:
-            st.write(
-                f"Only {len(validation.accepted)} of {validation.proposed_count} proposals were usable."
-            )
-
-        st.write(f"Executing both versions on {len(validation.accepted)} accepted cases")
+        st.write(f"Executing with {ENGINE_LABELS.get(engine, engine).lower()}")
         run = pipeline.build_run(
-            scenario,
+            target,
             validation,
             provenance="ai",
             model=generation.model,
@@ -996,9 +1035,25 @@ def perform_generation(scenario: Scenario) -> None:
 # Page
 # ---------------------------------------------------------------------------
 
-for state_key in ("run", "failure", "generation_notice"):
+for state_key in ("run", "failure"):
     if state_key not in st.session_state:
-        st.session_state[state_key] = None if state_key != "generation_notice" else ""
+        st.session_state[state_key] = None
+
+# Seed the editors with the discount example so the workspace is immediately usable.
+if "editor_original" not in st.session_state:
+    st.session_state["editor_original"] = SCENARIOS["discount"].original_source
+if "editor_modified" not in st.session_state:
+    st.session_state["editor_modified"] = SCENARIOS["discount"].modified_source
+
+
+def load_example() -> None:
+    """Populate both editors with a bundled example. Never runs anything."""
+    example = SCENARIOS[st.session_state["example_choice"]]
+    st.session_state["editor_original"] = example.original_source
+    st.session_state["editor_modified"] = example.modified_source
+    st.session_state["run"] = None
+    st.session_state["failure"] = None
+
 
 header_slot = st.empty()
 header_slot.markdown(header_markup(), unsafe_allow_html=True)
@@ -1006,70 +1061,161 @@ status = read_model_status()
 header_slot.markdown(header_markup(status), unsafe_allow_html=True)
 
 intro_col, controls_col = st.columns([1.65, 1], gap="large")
-
 with intro_col:
     render(
-        '<div class="rt-eyebrow"><b>Workspace 01</b>'
-        '<span class="sep">/</span>Regression analysis</div>'
+        '<div class="rt-eyebrow">Workspace 01<span class="sep">/</span>'
+        'Change investigation</div>'
         '<h1 class="rt-title">Find the break before it ships.</h1>'
-        '<p class="rt-lede">Compare two versions of a trusted Python function. '
-        "Qwen2.5-Coder 7B proposes the test inputs on this Mac; Python runs both "
-        "versions and shows exactly what changed.</p>"
+        '<p class="rt-lede">Paste two versions of a numeric Python function. '
+        "Qwen2.5-Coder 7B proposes test inputs on this Mac, and both versions are "
+        "executed with the same arguments so you can see exactly what changed.</p>"
     )
-
 with controls_col:
-    scenario_id = st.selectbox(
-        "Scenario",
+    st.selectbox(
+        "Load example",
         options=list(SCENARIOS),
         format_func=lambda key: SCENARIOS[key].label,
-        key="scenario_id",
-        on_change=reset_results,
+        key="example_choice",
+        on_change=load_example,
     )
-    generate_clicked = st.button("Generate & run tests", type="primary", width="stretch")
-    baseline_clicked = st.button("Run curated baseline", type="secondary", width="stretch")
     render(
-        '<div class="rt-control-note"><b>Curated baseline</b> uses pre-written cases, '
-        "not the model.</div>"
+        '<div class="rt-control-note">Loads a bundled example into the editors. '
+        "Nothing runs until you analyse.</div>"
     )
-
-scenario = get_scenario(scenario_id)
-
-if generate_clicked:
-    st.session_state["pending"] = "generate"
-if baseline_clicked:
-    st.session_state["pending"] = "baseline"
 
 if status.state != "available":
     render(status_notice(status))
     if st.button("Check connection", type="secondary", key="recheck_top"):
         read_model_status.clear()
         st.rerun()
+# --- Code workspace --------------------------------------------------------
 
-render(
-    '<div class="rt-contract">'
-    '<div class="rt-contract-label">Intended behaviour</div>'
-    f'<div><p class="rt-contract-text">{inline_code(scenario.contract)}</p>'
-    f'<div class="rt-contract-bounds">Inputs — {esc(scenario.constraints_text)} '
-    f"· finite numbers only · {len(scenario.parameters)} arguments</div></div>"
-    "</div>"
+# Live readout computed from the real text in the panels: signature compatibility
+# and how many lines the developer actually changed.
+try:
+    from core.expression import parse_function
+
+    original_parsed = parse_function(original_source := st.session_state["editor_original"])
+    modified_parsed = parse_function(modified_source := st.session_state["editor_modified"])
+    if original_parsed.parameters != modified_parsed.parameters:
+        signature_html = (
+            '<span class="bad">signature mismatch</span> · '
+            f"({esc(', '.join(original_parsed.parameters))}) vs "
+            f"({esc(', '.join(modified_parsed.parameters))})"
+        )
+    else:
+        signature_html = (
+            '<span class="ok">signatures compatible</span> · parameters: '
+            f"{esc(', '.join(original_parsed.parameters))}"
+        )
+except EditError as exc:
+    original_source = st.session_state["editor_original"]
+    modified_source = st.session_state["editor_modified"]
+    signature_html = f'<span class="bad">unsupported syntax</span> · {esc(str(exc)[:80])}'
+
+_original_lines = (original_source or "").splitlines()
+_modified_lines = (modified_source or "").splitlines()
+_changed_line_count = sum(
+    1
+    for line in difflib.unified_diff(_original_lines, _modified_lines, lineterm="")
+    if (line.startswith("+") and not line.startswith("+++"))
+    or (line.startswith("-") and not line.startswith("---"))
 )
 
-code_panes(scenario)
+pane_left, pane_right = st.columns(2, gap="small")
+
+with pane_left:
+    render(
+        '<section class="rt-pane">'
+        '<div class="rt-pane-head">'
+        '<span class="rt-pane-label"><b>01</b> / Original implementation</span>'
+        f'<span class="rt-pane-fn">{len(_original_lines)} lines · reviewed original</span>'
+        "</div>"
+    )
+    original_source = st.text_area(
+        "Original implementation source",
+        key="editor_original",
+        height=236,
+        label_visibility="collapsed",
+        help="The reviewed original. This exact text is what gets executed.",
+    )
+    render(
+        '<div class="rt-pane-foot" style="border-top:0;border-radius:0 0 12px 12px">'
+        f'<span class="rt-sig">{signature_html}</span>'
+        "</div>"
+    )
+
+with pane_right:
+    render(
+        '<section class="rt-pane">'
+        '<div class="rt-pane-head">'
+        '<span class="rt-pane-label"><b>02</b> / Modified implementation</span>'
+        f'<span class="rt-pane-fn">{len(_modified_lines)} lines · your edit</span>'
+        "</div>"
+    )
+    modified_source = st.text_area(
+        "Modified implementation source",
+        key="editor_modified",
+        height=236,
+        label_visibility="collapsed",
+        help="The proposed change. This exact text is what gets executed.",
+    )
+    render(
+        '<div class="rt-pane-foot" style="border-top:0;border-radius:0 0 12px 12px">'
+        f'<span class="rt-diffcount"><span class="n">{_changed_line_count}</span> '
+        "line(s) differ</span>"
+        '<span class="rt-sig">edited text is interpreted, never imported</span>'
+        "</div>"
+    )
+
+# --- Primary action --------------------------------------------------------
+
+action_left, action_right = st.columns([1.5, 1], gap="small")
+with action_left:
+    analyse_clicked = st.button(
+        "Analyse change", type="primary", use_container_width=True
+    )
+with action_right:
+    baseline_scenario = scenario_matching_sources(original_source, modified_source)
+    baseline_clicked = st.button(
+        "Run curated baseline",
+        type="secondary",
+        use_container_width=True,
+        disabled=baseline_scenario is None,
+        help=(
+            "Runs the pre-written cases for the matching bundled example. "
+            "Available only when the editors hold an unmodified example."
+        ),
+    )
+
+if analyse_clicked:
+    st.session_state["pending"] = "analyse"
+if baseline_clicked and baseline_scenario is not None:
+    st.session_state["pending"] = "baseline"
+    st.session_state["baseline_scenario_id"] = baseline_scenario.id
+
+render(
+    '<div class="rt-control-note" style="margin-top:8px">'
+    "<b>Analyse change</b> asks the local model for inputs, then executes both "
+    "versions. <b>Curated baseline</b> runs pre-written cases, not the model."
+    "</div>"
+)
 
 pending = st.session_state.get("pending")
 st.session_state["pending"] = None
 
-if pending == "generate":
-    perform_generation(scenario)
+if pending == "analyse":
+    perform_analysis(original_source, modified_source)
 elif pending == "baseline":
+    scenario = get_scenario(st.session_state.get("baseline_scenario_id", "discount"))
     st.session_state["failure"] = None
-    st.session_state["generation_notice"] = ""
     st.session_state["run"] = pipeline.run_curated_baseline(scenario)
 
 failure = st.session_state.get("failure")
 run = st.session_state.get("run")
 
-if run is not None and run.scenario_id != scenario.id:
+if run is not None and run.scenario_id not in {s.id for s in SCENARIOS.values()}:
+    # A run for code that is no longer on screen; drop it to avoid stale evidence.
     st.session_state["run"] = None
     run = None
 
@@ -1077,24 +1223,19 @@ if failure:
     render_failure(failure)
 
 if run is not None:
-    if st.session_state.get("generation_notice"):
-        render(
-            notice_markup(
-                "Model transport note",
-                esc(st.session_state["generation_notice"]),
-                variant="warning",
-            )
-        )
-    render_run(scenario, run)
+    render_run(run)
 elif not failure:
     render(
         '<div class="rt-empty">'
-        '<div class="rt-empty-title">No test run yet.</div>'
-        "<p>Generate inputs with the local model, or run the curated baseline. "
-        "Either way, both versions above receive the same arguments and every "
-        "outcome shown here will come from an actual call.</p>"
+        '<div class="rt-empty-title">No analysis yet.</div>'
+        "<p>Load an example or paste two numeric functions, then press "
+        "<b>Analyse change</b>. The local model proposes inputs and both versions "
+        "are executed with identical arguments, so every outcome below comes from "
+        "a real call.</p>"
         "</div>"
     )
+
+# --- Footer ----------------------------------------------------------------
 
 if run is not None and run.provenance == "curated":
     footer_input = "Curated baseline · not AI-generated"
@@ -1106,8 +1247,7 @@ else:
 render(
     '<div class="rt-footer">'
     f"<div><b>Test inputs</b> {esc(footer_input)} · Python executes both versions<br>"
-    f'<span class="rt-mono">{esc(footer_method)}</span>'
-    "</div>"
+    f'<span class="rt-mono">{esc(footer_method)}</span></div>'
     '<div class="rt-foot-right">Changed behaviour may be intentional. '
     "No difference found ≠ proof of correctness.</div>"
     "</div>"

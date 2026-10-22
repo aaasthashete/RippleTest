@@ -61,6 +61,7 @@ def run_report(run: RunRecord) -> dict[str, Any]:
     return {
         "tool": "RippleTest",
         "generated_at": run.created_at,
+        "execution_engine": run.engine_label,
         "scenario": {
             "id": run.scenario_id,
             "label": run.scenario_label,

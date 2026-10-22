@@ -10,11 +10,14 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .scenarios import Scenario
+
+if TYPE_CHECKING:
+    from .expression import FunctionPair
 
 MAX_CASES = 8
 MAX_REASON_CHARS = 400
@@ -94,7 +97,9 @@ def parse_json_content(content: str) -> Any:
         ) from exc
 
 
-def validate_cases(scenario: Scenario, payload: object) -> ValidationReport:
+def validate_cases(
+    scenario: "Scenario | FunctionPair", payload: object
+) -> ValidationReport:
     """Validate a decoded model reply against one scenario's exact contract."""
     if not isinstance(payload, dict):
         raise ModelResponseError(
@@ -162,7 +167,9 @@ def validate_cases(scenario: Scenario, payload: object) -> ValidationReport:
     return ValidationReport(accepted=tuple(accepted), rejected=tuple(rejected))
 
 
-def _argument_problem(scenario: Scenario, arguments: dict[str, Any]) -> str | None:
+def _argument_problem(
+    scenario: "Scenario | FunctionPair", arguments: dict[str, Any]
+) -> str | None:
     """Return a human-readable reason to reject, or None when the args are safe."""
     expected = scenario.parameter_names
     missing = [name for name in expected if name not in arguments]

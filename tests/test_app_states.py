@@ -28,16 +28,34 @@ def run_app(monkeypatch, status, generation=None):
     return AppTest.from_file("app.py", default_timeout=20).run()
 
 
-def test_page_renders_both_trusted_versions_and_the_real_status(monkeypatch):
+def test_page_renders_editable_panels_and_the_real_status(monkeypatch):
     at = run_app(monkeypatch, READY)
     assert not at.exception
     text = markdown_text(at)
     assert "Find the break before it ships." in text
     assert "Local / Qwen2.5-Coder 7B · Ready" in text
-    assert "def calculate_discount(price, discount):" in text
-    assert "price - (price * discount / 100)" in text
-    assert "No test run yet." in text
+    assert "Original implementation" in text
+    assert "Modified implementation" in text
+    assert "Analyse change" in [button.label for button in at.button]
+    assert "No analysis yet." in text
     assert "Ollama unavailable" not in text
+    # The editors are seeded with the bundled discount example.
+    areas = {area.label: area.value for area in at.text_area}
+    assert "calculate_discount" in areas["Original implementation source"]
+    assert "price - discount" in areas["Modified implementation source"]
+
+
+def test_editors_hold_independent_editable_text(monkeypatch):
+    """The two panels are real text areas a developer can type into."""
+    at = run_app(monkeypatch, READY)
+    original = at.text_area[0]
+    modified = at.text_area[1]
+    original.set_value("def f(x):\n    return x * 2\n")
+    modified.set_value("def f(x):\n    return x * 3\n")
+    at.run()
+    assert not at.exception
+    assert at.text_area[0].value == "def f(x):\n    return x * 2\n"
+    assert at.text_area[1].value == "def f(x):\n    return x * 3\n"
 
 
 def test_offline_state_is_actionable_and_shows_no_results(monkeypatch):
@@ -47,7 +65,7 @@ def test_offline_state_is_actionable_and_shows_no_results(monkeypatch):
     assert "Ollama / offline" in text
     assert "Ollama unavailable" in text
     assert "No hosted model will be substituted." in text
-    assert "No test run yet." in text
+    assert "No analysis yet." in text
     assert "Observed behaviour" not in text
 
 
@@ -60,6 +78,21 @@ def test_model_missing_state_names_the_pull_command(monkeypatch):
     assert "ollama pull qwen2.5-coder:7b" in text
 
 
+def test_unsupported_python_is_refused_visibly_and_never_executed(monkeypatch):
+    """Pasting arbitrary Python must produce an explanation, not execution."""
+    at = run_app(monkeypatch, READY)
+    at.text_area[1].set_value("import os\n\ndef calculate_discount(price, discount):\n    return os.getcwd()\n")
+    at.run()
+    analyse = next(b for b in at.button if b.label == "Analyse change")
+    analyse.click().run()
+    assert not at.exception
+    text = markdown_text(at)
+    assert "Unsupported Python in the editor" in text
+    assert "not executed" in text
+    assert "Observed behaviour" not in text
+    assert "No analysis yet." not in text
+
+
 def test_generation_transport_failure_is_shown_without_stale_results(monkeypatch):
     failure = GenerationResult(
         ok=False,
@@ -70,13 +103,13 @@ def test_generation_transport_failure_is_shown_without_stale_results(monkeypatch
         duration_seconds=0.1,
     )
     at = run_app(monkeypatch, READY, generation=failure)
-    at.button[0].click().run()
+    analyse = next(b for b in at.button if b.label == "Analyse change")
+    analyse.click().run()
     assert not at.exception
     text = markdown_text(at)
-    assert at.button[0].label == "Generate & run tests"
     assert "Ollama is offline" in text
     assert "Observed behaviour" not in text
-    assert "No test run yet." not in text
+    assert "No analysis yet." not in text
 
 
 def test_invalid_json_reply_is_reported_as_ai_response_invalid(monkeypatch):
@@ -88,7 +121,7 @@ def test_invalid_json_reply_is_reported_as_ai_response_invalid(monkeypatch):
         used_schema=True,
     )
     at = run_app(monkeypatch, READY, generation=generation)
-    at.button[0].click().run()
+    next(b for b in at.button if b.label == "Analyse change").click().run()
     assert not at.exception
     text = markdown_text(at)
     assert "AI response invalid" in text
@@ -108,7 +141,7 @@ def test_zero_usable_cases_reports_each_rejection(monkeypatch):
         used_schema=True,
     )
     at = run_app(monkeypatch, READY, generation=generation)
-    at.button[0].click().run()
+    next(b for b in at.button if b.label == "Analyse change").click().run()
     assert not at.exception
     text = markdown_text(at)
     assert "No usable test inputs" in text
@@ -118,14 +151,24 @@ def test_zero_usable_cases_reports_each_rejection(monkeypatch):
 
 def test_curated_baseline_works_offline_and_is_labelled(monkeypatch):
     at = run_app(monkeypatch, OFFLINE)
-    assert at.button[1].label == "Run curated baseline"
-    at.button[1].click().run()
+    baseline = next(b for b in at.button if b.label == "Run curated baseline")
+    assert baseline.disabled is False  # editors hold the matching bundled example
+    baseline.click().run()
     assert not at.exception
     text = markdown_text(at)
     assert "Observed behaviour" in text
     assert "Curated baseline" in text
-    assert "pre-written cases · not AI-generated" in text
+    assert "pre-written" in text
     assert "Why this baseline case exists" in text
     assert "5 cases executed" in text
     assert "Curated baseline · not AI-generated" in text
     assert "Qwen2.5-Coder 7B via local Ollama" not in text
+
+
+def test_baseline_is_disabled_for_unmatched_custom_code(monkeypatch):
+    """Curated cases belong to a bundled example; never run them on other code."""
+    at = run_app(monkeypatch, OFFLINE)
+    at.text_area[1].set_value("def calculate_discount(price, discount):\n    return price\n")
+    at.run()
+    baseline = next(b for b in at.button if b.label == "Run curated baseline")
+    assert baseline.disabled is True

@@ -8,13 +8,20 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from .scenarios import Scenario
 from .validators import ValidatedCase
 
+if TYPE_CHECKING:
+    from .expression import FunctionPair
+
 Classification = Literal["same", "changed", "error"]
 Provenance = Literal["ai", "curated"]
+
+# Anything that exposes .original and .modified callables: a trusted Scenario
+# or an editable FunctionPair built by the restricted AST interpreter.
+RunnableSource = "Scenario | FunctionPair"
 
 # Numeric agreement tolerance. Documented in the README and shown in the UI.
 REL_TOL = 1e-9
@@ -125,7 +132,7 @@ def compare(
 
 
 def run_cases(
-    scenario: Scenario,
+    scenario: "Scenario | FunctionPair",
     cases: tuple[ValidatedCase, ...],
     provenance: Provenance,
 ) -> list[CaseResult]:

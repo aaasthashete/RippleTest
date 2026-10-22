@@ -207,3 +207,28 @@ def get_scenario(scenario_id: str) -> Scenario:
         return SCENARIOS[scenario_id]
     except KeyError as exc:
         raise KeyError(f"Unknown scenario: {scenario_id!r}") from exc
+
+
+def normalized_source(text: str | None) -> str:
+    """Whitespace-insensitive view of pasted code, used only to recognise examples."""
+    return "\n".join(line.rstrip() for line in (text or "").strip().splitlines())
+
+
+def scenario_matching_sources(
+    original_source: str, modified_source: str
+) -> Scenario | None:
+    """Return the bundled scenario whose displayed sources match the pasted code.
+
+    This lets a developer who has not edited the examples take the reviewed,
+    imported execution path. It never fires when the text differs, so the app
+    can never display edited code while executing something else.
+    """
+    original_key = normalized_source(original_source)
+    modified_key = normalized_source(modified_source)
+    for scenario in SCENARIOS.values():
+        if (
+            original_key == normalized_source(scenario.original_source)
+            and modified_key == normalized_source(scenario.modified_source)
+        ):
+            return scenario
+    return None
