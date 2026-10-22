@@ -32,7 +32,8 @@ def test_page_renders_editable_panels_and_the_real_status(monkeypatch):
     at = run_app(monkeypatch, READY)
     assert not at.exception
     text = markdown_text(at)
-    assert "Find the break before it ships." in text
+    assert "Small change." in text
+    assert "Massive consequences." in text
     assert "Local / Qwen2.5-Coder 7B · Ready" in text
     assert "Original implementation" in text
     assert "Modified implementation" in text
@@ -226,3 +227,29 @@ def test_baseline_is_disabled_for_unmatched_custom_code(monkeypatch):
     at.run()
     baseline = next(b for b in at.button if b.label == "Run curated baseline")
     assert baseline.disabled is True
+
+
+def test_editing_after_successful_ai_run_clears_outdated_evidence(monkeypatch):
+    """Never show outputs calculated for a previous version of editor content."""
+    generation = GenerationResult(
+        ok=True,
+        raw_content=(
+            '{"test_cases": [{"arguments": {"price": 1000, "discount": 10}, '
+            '"reason": "normal"}]}'
+        ),
+        model=MODEL_NAME,
+        duration_seconds=1.0,
+        used_schema=True,
+    )
+    at = run_app(monkeypatch, READY, generation=generation)
+    next(b for b in at.button if b.label == "Analyse change").click().run()
+    assert not at.exception
+    assert "Observed behaviour" in markdown_text(at)
+    at.text_area[1].set_value(
+        "def calculate_discount(price, discount):\n"
+        "    return price - (price * discount / 200)\n"
+    ).run()
+    assert not at.exception
+    text = markdown_text(at)
+    assert "Observed behaviour" not in text
+    assert "No analysis yet." in text

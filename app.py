@@ -640,6 +640,653 @@ table.rt-table { width: 100%; border-collapse: collapse; min-width: 640px; }
   .rt-metric-value { font-size: 23px; }
 }
 
+/* RT_STAGE_POLISH_V2 — decorative styles only */
+/* Calibrated contrast and atmosphere. No external fonts or network assets. */
+:root {
+  --rt-v2-border: #334560;
+  --rt-v2-ice: #B3C7FF;
+  --rt-v2-soft: #A3B4CD;
+}
+[data-testid="stAppViewContainer"] {
+  background:
+    radial-gradient(ellipse 850px 370px at 46% -210px, rgba(94,123,255,.18), transparent 80%),
+    linear-gradient(180deg, #0D1420 0px, #0B0F17 410px) !important;
+}
+[data-testid="stMainBlockContainer"] { max-width: 1470px; padding-left: 45px; padding-right: 45px; }
+.rt-header {
+  background: linear-gradient(90deg, rgba(36,49,73,.84), rgba(24,34,54,.55)) !important;
+  border-color: #34445F !important;
+  box-shadow: 0 14px 38px rgba(0,0,0,.18), inset 0 1px 0 rgba(211,223,255,.055);
+  padding: 14px 20px !important;
+}
+.rt-status {
+  border: 1px solid rgba(140,167,221,.23);
+  background: rgba(10,17,31,.6);
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 10px;
+}
+.rt-status .rt-dot { width: 7px; height: 7px; }
+.rt-eyebrow { color: #9DB7FF !important; font-weight: 700; letter-spacing: .18em !important; }
+.rt-title { font-size: clamp(34px, 3.45vw, 49px) !important; letter-spacing: -.057em !important; line-height: 1.085 !important; max-width: 19ch; }
+.rt-lede { max-width: 67ch; color: #ADBAD0 !important; }
+
+/* Thin, functional process rail: a way to understand the system at a glance. */
+.rt-process-rail {
+  display: grid; grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 0; background: linear-gradient(100deg, rgba(26,38,60,.93), rgba(17,26,44,.94));
+  border: 1px solid #304360; border-radius: 12px;
+  margin: 26px 0 21px; overflow: hidden;
+  box-shadow: 0 10px 25px rgba(0,0,0,.15), inset 0 1px rgba(221,230,255,.04);
+}
+.rt-process-step {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; min-width: 0;
+  border-left: 1px solid rgba(137,160,201,.12);
+}
+.rt-process-step:first-child { border-left: 0; }
+.rt-process-index {
+  flex: none; color: #91AFFF; font: 700 11px var(--mono);
+  background: rgba(92,126,255,.11); border: 1px solid rgba(102,135,242,.21);
+  border-radius: 6px; padding: 6px 7px;
+}
+.rt-process-copy { min-width: 0; }
+.rt-process-copy b { display: block; color: #E9EFFB; font-size: 11px; font-weight: 650; letter-spacing: .012em; }
+.rt-process-copy span { display: block; font-size: 10px; line-height: 1.4; margin-top: 1px; color: #8E9FB9; }
+
+/* Define visual scope: the current baseline is a working tool, not a static mock. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) {
+  border-color: #364869 !important; border-radius: 13px !important;
+  background: #0D182A !important;
+  box-shadow: 0 15px 34px rgba(0,0,0,.18), inset 0 1px 0 rgba(231,239,255,.03) !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head):focus-within {
+  border-color: #6B8DFB !important;
+  box-shadow: 0 0 0 2px rgba(83,118,245,.18), 0 17px 38px rgba(0,0,0,.2) !important;
+}
+.rt-pane-head { background: #1A2940 !important; border-bottom: 1px solid #334761 !important; padding: 14px 18px !important; }
+.rt-pane-head--modified { background: #202D4E !important; }
+.rt-pane-label { color: #D3DEF2 !important; letter-spacing: .115em; }
+.rt-pane-fn { color: #9DAFC8 !important; }
+.rt-pane-foot { background: #142037 !important; border-top: 1px solid #334761 !important; }
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) [data-testid="stTextArea"],
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) [data-baseweb="textarea"],
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) textarea {
+  background: #0D182A !important;
+  color: #EDF3FF !important;
+  -webkit-text-fill-color: #EDF3FF !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) textarea {
+  font-size: 14px !important; letter-spacing: .005em; line-height: 1.75 !important;
+  caret-color: #B3C7FF !important;
+}
+
+[data-testid="stBaseButton-primary"], button[kind="primary"] {
+  background: linear-gradient(112deg, #345FF8 0%, #536FFF 100%) !important;
+  color: #fff !important; border-color: #7392FF !important;
+  box-shadow: 0 7px 24px rgba(60,88,233,.24) !important;
+  font-weight: 700 !important;
+}
+[data-testid="stBaseButton-primary"]:hover, button[kind="primary"]:hover {
+  filter: brightness(1.08) !important; box-shadow: 0 10px 29px rgba(60,88,233,.32) !important;
+}
+[data-testid="stBaseButton-secondary"]:hover, button[kind="secondary"]:hover {
+  background: #263553 !important;
+}
+[data-testid="stBaseButton-primary"]:focus-visible,
+[data-testid="stBaseButton-secondary"]:focus-visible,
+[data-testid="stTextArea"] textarea:focus-visible {
+  outline: 2px solid #89A6FF !important; outline-offset: 2px;
+}
+
+.rt-summary { border-color: #354760 !important; box-shadow: 0 13px 29px rgba(0,0,0,.13); }
+.rt-metric-value { font-size: clamp(25px, 2.5vw, 33px) !important; font-weight: 650 !important; }
+.rt-metric-label { color: #AABBD3 !important; }
+.rt-highlight { border-color: rgba(92,123,255,.52) !important; background: linear-gradient(110deg, rgba(45,71,139,.38), rgba(25,37,60,.7) 72%), #131E31 !important; }
+.rt-highlight-eyebrow { color: #AAC1FF !important; }
+.rt-table-wrap, .rt-inspector { border-color: #35445D !important; }
+.rt-table thead th { background: #202C42 !important; color: #B9C7DC !important; }
+.rt-table tbody tr:hover td { background: #263650 !important; }
+.rt-row--changed:hover td { background: rgba(255,107,107,.16) !important; }
+.rt-inspector { background: #152033 !important; }
+.rt-obs { border-color: #35425A !important; }
+.rt-footer { border-top-color: #36455C !important; }
+@media (max-width: 1000px) {
+  .rt-process-rail { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .rt-process-step:nth-child(3) { border-left: 0; border-top: 1px solid rgba(137,160,201,.12); }
+  .rt-process-step:nth-child(4) { border-top: 1px solid rgba(137,160,201,.12); }
+}
+@media (max-width: 640px) {
+  [data-testid="stMainBlockContainer"] { padding-left: 16px !important; padding-right: 16px !important; }
+  .rt-process-rail { margin-top: 20px; }
+  .rt-process-step { gap: 7px; padding: 10px 9px; }
+  .rt-process-copy span { display: none; }
+  .rt-process-copy b { font-size: 10px; }
+  .rt-title { font-size: 32px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+
+
+/* RT_EDITORIAL_V3 */
+:root {
+    --rt-lime: #C9FA83;
+    --rt-paper: #F0EFE9;
+    --rt-dark: #151C22;
+}
+
+/* Main canvas */
+[data-testid="stAppViewContainer"] {
+    background: radial-gradient(
+        ellipse 950px 480px at 80% -180px,
+        rgba(147,187,125,.12),
+        transparent 80%
+    ), #080D13 !important;
+}
+
+[data-testid="stMainBlockContainer"] {
+    max-width: 1480px !important;
+    padding-top: 1.4rem !important;
+}
+
+/* Navigation */
+.rt-header {
+    background: #111A21 !important;
+    border: 1px solid #2C3B42 !important;
+    border-radius: 14px !important;
+    padding: 14px 20px !important;
+    margin-bottom: 36px !important;
+}
+
+.rt-mark {
+    background: var(--rt-lime) !important;
+    color: #18211C !important;
+    padding: 7px 9px !important;
+    font-weight: 900 !important;
+    border-radius: 6px !important;
+    transform: rotate(-7deg);
+}
+
+.rt-status {
+    background: #14231E !important;
+    border-color: #334C41 !important;
+}
+
+/* Editorial headline */
+.rt-eyebrow {
+    color: var(--rt-lime) !important;
+    letter-spacing: .21em !important;
+}
+
+.rt-title {
+    font-size: clamp(45px, 5.4vw, 80px) !important;
+    letter-spacing: -.079em !important;
+    line-height: 1.01 !important;
+    max-width: none !important;
+    margin: 24px 0 !important;
+}
+
+.rt-title em {
+    font-family: Georgia, "Times New Roman", serif !important;
+    font-weight: 400 !important;
+    color: #B6C5D2 !important;
+    letter-spacing: -.07em;
+}
+
+.rt-lede {
+    font-size: 15px !important;
+    line-height: 1.7 !important;
+    color: #A8B5C0 !important;
+    max-width: 62ch !important;
+}
+
+/* Workflow */
+.rt-process-rail {
+    background: transparent !important;
+    border-color: #2C3B42 !important;
+    box-shadow: none !important;
+    margin: 26px 0 18px !important;
+}
+
+.rt-process-index {
+    background: #1B2B27 !important;
+    border-color: #31463A !important;
+    color: var(--rt-lime) !important;
+}
+
+/* Code editors */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) {
+    background: #0D171D !important;
+    border: 1px solid #33454D !important;
+    box-shadow: none !important;
+}
+
+.rt-pane-head {
+    background: #192A32 !important;
+    border-color: #35464B !important;
+}
+
+.rt-pane-head--modified {
+    background: #22303A !important;
+}
+
+.rt-pane-foot {
+    background: #15222C !important;
+    border-color: #34444D !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) textarea {
+    min-height: 125px !important;
+    background: #0D171D !important;
+    color: #EFF5EC !important;
+    -webkit-text-fill-color: #EFF5EC !important;
+    line-height: 1.7 !important;
+}
+
+/* Primary action */
+[data-testid="stBaseButton-primary"],
+button[kind="primary"] {
+    background: var(--rt-lime) !important;
+    border-color: var(--rt-lime) !important;
+    color: #142319 !important;
+    font-size: 14px !important;
+    font-weight: 800 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 10px 29px rgba(154,212,115,.14) !important;
+}
+
+[data-testid="stBaseButton-primary"]:hover,
+button[kind="primary"]:hover {
+    background: #E0FFAD !important;
+    border-color: #E0FFAD !important;
+}
+
+/* Bright evidence summary */
+.rt-summary {
+    background: var(--rt-paper) !important;
+    border: 0 !important;
+    border-radius: 15px !important;
+    box-shadow: 0 20px 60px rgba(0,0,0,.2) !important;
+}
+
+.rt-metric {
+    padding: 20px 24px !important;
+    border-color: #D3D7CE !important;
+}
+
+.rt-metric-label {
+    color: #59676A !important;
+}
+
+.rt-metric-value {
+    color: var(--rt-dark) !important;
+    font-size: clamp(33px,3.7vw,51px) !important;
+    font-weight: 800 !important;
+    margin-top: 9px !important;
+}
+
+.rt-metric--changed {
+    background: #F6DFD7 !important;
+}
+
+.rt-metric--changed .rt-metric-value {
+    color: #B34B3B !important;
+}
+
+/* Counterexample evidence */
+.rt-highlight {
+    background: #EAECE5 !important;
+    border: 0 !important;
+    border-radius: 15px !important;
+    padding: 27px 29px !important;
+    box-shadow: 0 13px 38px rgba(0,0,0,.14) !important;
+}
+
+.rt-highlight-eyebrow,
+.rt-side-label {
+    color: #50615B !important;
+}
+
+.rt-side-value,
+.rt-side--old .rt-side-value {
+    color: #17211F !important;
+    font-size: clamp(29px,3.5vw,47px) !important;
+}
+
+.rt-side--new .rt-side-value {
+    color: #AD493A !important;
+}
+
+.rt-arrow {
+    color: #7B8A83 !important;
+    font-size: 24px !important;
+}
+
+.rt-highlight-input {
+    color: #4F625C !important;
+    border-color: #C9D1C9 !important;
+}
+
+.rt-highlight-input b {
+    color: #17211F !important;
+}
+
+.rt-highlight-reason {
+    color: #53645E !important;
+}
+
+.rt-highlight .rt-chip--changed {
+    color: #A23E30 !important;
+    background: #F8DDD6 !important;
+}
+
+.rt-table-wrap,
+.rt-inspector {
+    border-radius: 14px !important;
+}
+
+.rt-table thead th {
+    background: #1C2A32 !important;
+}
+
+.rt-empty {
+    background: #111D24 !important;
+    border: 1px dashed #344952 !important;
+}
+
+@media (max-width: 850px) {
+    .rt-title { font-size: 43px !important; }
+    .rt-highlight { padding: 20px !important; }
+    .rt-metric { padding: 14px !important; }
+    .rt-metric-value { font-size: 29px !important; }
+}
+
+
+/* RT_UNIFIED_DARK_V5 */
+:root {
+ --canvas:#0B111A;
+ --surface:#172638;
+ --surface-deep:#101C2B;
+ --surface-raised:#22364A;
+ --line:#354B60;
+ --line-soft:#2B4055;
+ --ink:#F3F7FC;
+ --ink-muted:#ADBED0;
+ --ink-faint:#91A5BA;
+}
+
+[data-testid="stAppViewContainer"] {
+ background:#0B111A !important;
+ color:#F3F7FC !important;
+}
+
+.rt-header {
+ background:#152435 !important;
+ border-color:#344B61 !important;
+}
+
+.rt-title {
+ font-size:clamp(42px,4.5vw,66px) !important;
+}
+
+.rt-title em {
+ color:#A8C4D6 !important;
+}
+
+.rt-process-rail {
+ background:#172638 !important;
+ border-color:#344B61 !important;
+}
+
+.rt-process-copy b {
+ color:#F2F7FD !important;
+}
+
+.rt-process-copy span, .rt-lede {
+ color:#AFC1D2 !important;
+}
+
+[data-testid="stWidgetLabel"] p {
+ color:#B9C9D8 !important;
+}
+
+[data-baseweb="select"] > div {
+ background:#1B2B3D !important;
+ color:#F2F8FE !important;
+ border:1px solid #405970 !important;
+}
+
+[data-baseweb="select"] span {
+ color:#F2F8FE !important;
+}
+
+/* Unified dark result panels */
+
+.rt-summary, .rt-table-wrap, .rt-inspector {
+ background:#18283A !important;
+ border:1px solid #344B61 !important;
+}
+
+.rt-summary {
+ box-shadow:0 15px 35px rgba(0,0,0,.18) !important;
+}
+
+.rt-metric {
+ background:transparent !important;
+ border-color:#344B61 !important;
+}
+
+.rt-metric-label {
+ color:#B6C6D7 !important;
+}
+
+.rt-metric-value {
+ color:#F5F8FE !important;
+}
+
+.rt-metric--changed {
+ background:rgba(255,128,145,.095) !important;
+}
+
+.rt-metric--changed .rt-metric-value {
+ color:#FF91A0 !important;
+}
+
+/* Counterexample inspector */
+
+.rt-highlight {
+ background:#203247 !important;
+ border:1px solid #3A526A !important;
+}
+
+.rt-highlight-eyebrow {
+ color:#C9FA83 !important;
+}
+
+.rt-side-label, .rt-highlight-reason {
+ color:#B3C3D3 !important;
+}
+
+.rt-side-value, .rt-side--old .rt-side-value {
+ color:#F5F9FF !important;
+}
+
+.rt-side--new .rt-side-value,
+.rt-highlight-input .delta {
+ color:#FF9DA7 !important;
+}
+
+.rt-highlight-input {
+ color:#BFCDDA !important;
+ border-color:#3C5368 !important;
+}
+
+.rt-highlight-input b {
+ color:#F4F8FE !important;
+}
+
+/* Harmonised results table */
+
+.rt-table thead th {
+ background:#21354A !important;
+ color:#C6D5E4 !important;
+}
+
+.rt-table tbody td, .rt-table .mono {
+ color:#ECF3FA !important;
+ border-color:#2D4358 !important;
+}
+
+.rt-table tbody tr.rt-row--changed {
+ background:rgba(255,128,145,.085) !important;
+}
+
+.rt-table tbody tr.rt-row--selected {
+ background:rgba(201,250,131,.09) !important;
+}
+
+.rt-table tbody tr:hover td {
+ background:#2A4055 !important;
+}
+
+.rt-args, .rt-obs {
+ background:#112033 !important;
+ border-color:#364A5D !important;
+}
+
+.rt-empty {
+ background:#152537 !important;
+ border-color:#395269 !important;
+}
+
+
+/* RT_WORKSPACE_V6 */
+
+/* Compact editorial header */
+.rt-header {
+    margin-bottom: 18px !important;
+}
+
+.rt-eyebrow {
+    margin-bottom: 10px !important;
+}
+
+.rt-title {
+    font-size: clamp(40px, 4.1vw, 58px) !important;
+    line-height: 1.04 !important;
+    letter-spacing: -.066em !important;
+    margin: 12px 0 14px !important;
+}
+
+.rt-title em {
+    color: #AEC7D5 !important;
+}
+
+.rt-lede {
+    max-width: 76ch !important;
+    font-size: 14px !important;
+    line-height: 1.55 !important;
+    margin-bottom: 8px !important;
+}
+
+/* Cleaner workflow strip */
+.rt-process-rail {
+    margin: 18px 0 17px !important;
+    border-radius: 12px !important;
+}
+
+.rt-process-step {
+    padding: 9px 12px !important;
+}
+
+/* Workspace heading */
+.rt-workspace-heading {
+    min-height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 7px 0 13px;
+}
+
+.rt-workspace-overline {
+    font: 700 10px/1.3 var(--mono);
+    letter-spacing: .13em;
+    color: #C9FA83;
+}
+
+.rt-workspace-heading h2 {
+    color: #F3F7FC !important;
+    font: 700 21px/1.2 var(--sans) !important;
+    letter-spacing: -.035em !important;
+    margin: 5px 0 0 !important;
+}
+
+.rt-workspace-hint {
+    font: 11px/1.45 var(--mono);
+    color: #92A7BC;
+}
+
+/* Refined code-editor panels */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) {
+    border-radius: 13px !important;
+    border: 1px solid #365065 !important;
+    background: #101C2B !important;
+    overflow: hidden !important;
+    box-shadow: 0 9px 20px rgba(0,0,0,.16) !important;
+}
+
+.rt-pane-head {
+    background: #1A2B3A !important;
+    padding: 11px 14px !important;
+}
+
+.rt-pane-head--modified {
+    background: #233243 !important;
+}
+
+.rt-pane-fn {
+    color: #9CB0C4 !important;
+}
+
+.rt-pane-foot {
+    background: #142332 !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rt-pane-head) textarea {
+    background-color: #101C2B !important;
+    color: #EAF4FB !important;
+    -webkit-text-fill-color: #EAF4FB !important;
+    font-size: 12.8px !important;
+    line-height: 1.65 !important;
+    caret-color: #C9FA83 !important;
+}
+
+/* Preserve our signature neon button */
+[data-testid="stBaseButton-primary"],
+button[kind="primary"] {
+    background: #C9FA83 !important;
+    color: #142319 !important;
+    border: 1px solid #C9FA83 !important;
+}
+
+@media (max-width: 900px) {
+    .rt-title {
+        font-size: clamp(34px, 6vw, 44px) !important;
+    }
+
+    .rt-workspace-heading {
+        min-height: 54px;
+    }
+
+    .rt-workspace-hint {
+        display: none;
+    }
+}
+
 /* Responsive ----------------------------------------------------------- */
 @media (max-width: 900px) {
   [data-testid="stMainBlockContainer"] { padding: 1rem 18px 3.5rem; }
@@ -1205,28 +1852,26 @@ header_slot.markdown(header_markup(), unsafe_allow_html=True)
 status = read_model_status()
 header_slot.markdown(header_markup(status), unsafe_allow_html=True)
 
-intro_col, controls_col = st.columns([1.65, 1], gap="large")
-with intro_col:
-    render(
-        '<div class="rt-eyebrow">Workspace 01<span class="sep">/</span>'
-        'Change investigation</div>'
-        '<h1 class="rt-title">Find the break before it ships.</h1>'
-        '<p class="rt-lede">Paste two versions of a numeric Python function. '
-        "Qwen2.5-Coder 7B proposes test inputs on this Mac, and both versions are "
-        "executed with the same arguments so you can see exactly what changed.</p>"
-    )
-with controls_col:
-    st.selectbox(
-        "Load example",
-        options=list(SCENARIOS),
-        format_func=lambda key: SCENARIOS[key].label,
-        key="example_choice",
-        on_change=load_example,
-    )
-    render(
-        '<div class="rt-control-note">Loads a bundled example into the editors. '
-        "Nothing runs until you analyse.</div>"
-    )
+render(
+    '<div class="rt-eyebrow">Workspace 01<span class="sep">/</span>'
+    'Change investigation</div>'
+    '<h1 class="rt-title">Small change.<br><em>Massive consequences.</em></h1>'
+    '<p class="rt-lede">AI-generated edge cases. Real execution evidence. '
+    'Compare two Python functions and discover where their behaviour diverges.</p>'
+)
+
+render(
+    '<div class="rt-process-rail" aria-label="Analysis stages">'
+    '<div class="rt-process-step"><span class="rt-process-index">01</span>'
+    '<div class="rt-process-copy"><b>Compare</b><span>Two code versions</span></div></div>'
+    '<div class="rt-process-step"><span class="rt-process-index">02</span>'
+    '<div class="rt-process-copy"><b>Generate</b><span>Local AI test inputs</span></div></div>'
+    '<div class="rt-process-step"><span class="rt-process-index">03</span>'
+    '<div class="rt-process-copy"><b>Execute</b><span>Real Python outcomes</span></div></div>'
+    '<div class="rt-process-step"><span class="rt-process-index">04</span>'
+    '<div class="rt-process-copy"><b>Inspect</b><span>Reproducible evidence</span></div></div>'
+    '</div>'
+)
 
 if status.state != "available":
     render(status_notice(status))
@@ -1267,6 +1912,27 @@ _changed_line_count = sum(
     or (line.startswith("-") and not line.startswith("---"))
 )
 
+# Example loader sits beside the code workspace.
+workspace_label, example_loader = st.columns(
+    [3.3, 1.15], gap="small", vertical_alignment="bottom"
+)
+with workspace_label:
+    render(
+        '<div class="rt-workspace-heading">'
+        '<div><span class="rt-workspace-overline">01 / INVESTIGATE</span>'
+        '<h2>Compare implementations</h2></div>'
+        '<span class="rt-workspace-hint">Python · restricted numerical functions</span>'
+        '</div>'
+    )
+with example_loader:
+    st.selectbox(
+        "Load example",
+        options=list(SCENARIOS),
+        format_func=lambda key: SCENARIOS[key].label,
+        key="example_choice",
+        on_change=load_example,
+    )
+
 pane_left, pane_right = st.columns(2, gap="small")
 
 # Use real Streamlit containers so the header, editor and footer render as one
@@ -1282,7 +1948,7 @@ with pane_left:
         original_source = st.text_area(
             "Original implementation source",
             key="editor_original",
-            height=236,
+            height=max(142, min(300, 110 + 18 * len(_original_lines))),
             label_visibility="collapsed",
             help="The reviewed original. This exact text is what gets executed.",
         )
@@ -1303,7 +1969,7 @@ with pane_right:
         modified_source = st.text_area(
             "Modified implementation source",
             key="editor_modified",
-            height=236,
+            height=max(142, min(300, 110 + 18 * len(_modified_lines))),
             label_visibility="collapsed",
             help="The proposed change. This exact text is what gets executed.",
         )
@@ -1359,8 +2025,16 @@ elif pending == "baseline":
     st.session_state["failure"] = None
     st.session_state["run"] = pipeline.run_curated_baseline(scenario)
 
+# Evidence belongs to the exact code pair that was executed. Editing either
+# panel invalidates the displayed evidence until the next analysis.
+if pending in {"analyse", "baseline"} and st.session_state.get("run") is not None:
+    st.session_state["run_sources"] = (original_source, modified_source)
+
 failure = st.session_state.get("failure")
 run = st.session_state.get("run")
+if run is not None and st.session_state.get("run_sources") != (original_source, modified_source):
+    st.session_state["run"] = None
+    run = None
 
 if run is not None and run.scenario_id in {s.id for s in SCENARIOS.values()}:
     # A bundled-scenario run is only valid while the editors still hold that
