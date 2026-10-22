@@ -1,0 +1,8 @@
+# Versions used for the verified local run (macOS arm64, Python 3.11.15).
+# Streamlit is pinned because the theme/UI was verified against this version.
+streamlit==1.58.0
+requests==2.34.2
+pydantic==2.10.4
+
+# Test runner (P0 requirement: automated tests)
+pytest==7.4.4

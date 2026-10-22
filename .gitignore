@@ -1,0 +1,29 @@
+# Local environment
+.venv/
+venv/
+
+# Python caches and build artefacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Streamlit local secrets (not needed for this local-only app)
+.streamlit/secrets.toml
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs and exported reports
+*.log
+rippletest-*.json
+
+# Freebuff app metadata (not project source)
+.freebuff/
